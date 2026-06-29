@@ -1,245 +1,351 @@
 """
 preprocess.py
 -------------
-Loads all water station CSVs and rainfall, aligns them on a common time grid,
-builds a spatial graph based on haversine distance between stations, and
-returns everything as tensors ready for the ST-GNN.
+Multi-year, multi-schema loader for bay water station data.
+
+  2025 data : water_data/water_stations_raw/
+              8 sensor channels, Unix float timestamps, lat/lon per row
+  2026 data : water_data/water_stations_2026/
+              3 sensor channels (temp, sal, ODO), local Miami time strings,
+              GPS lat/lon per row
+
+Both datasets are harmonised to a single canonical 8-feature set.  Stations
+from both years are matched by haversine distance; co-located 2025 deployments
+(L2, L3, L5 are all at the same spot) are merged via nanmean before matching.
+Unmatched 2026 platforms become new graph nodes.
+
+Rainfall is available for 2025 (Mar-Oct) and 2026 (Jan-May) with measured
+rain_in, temp_min, and temp_max from Miami Airport daily records. All three
+are broadcast to the 5-min grid and fed to the model as external forcing.
 """
 
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from math import radians, sin, cos, sqrt, atan2
+import warnings
 
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-DATA_DIR = Path(__file__).parent / "water_data"
-STATION_DIR = DATA_DIR / "water_stations_raw"
-RAINFALL_CSV = DATA_DIR / "rainfall" / "rainfall_2025_mar_oct_combined.csv"
-
-STATION_FILES = sorted(STATION_DIR.glob("raw-data-platform*.csv"))
-
-# Sensor columns common to all stations (TSS present only in some — excluded
-# here to keep a uniform feature tensor; add it back if you drop-fill).
-SENSOR_COLS = [
-    "Temperature (C)",
-    "Specific Conductance (uS/cm)",
-    "Salinity (PPT)",
-    "Pressure (psia)",
-    "Depth (m)",
-    "ODO (%Sat)",
-    "ODO (mg/L)",
-    "Turbidity (FNU)",
-]
-
+DATA_DIR      = Path(__file__).parent / "water_data"
+STATION_DIR   = DATA_DIR / "water_stations_raw"
+STATION_2026  = DATA_DIR / "water_stations_2026"
+RAINFALL_DIR  = DATA_DIR / "rainfall"
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Feature schema
+# ---------------------------------------------------------------------------
+COLUMN_MAP = {
+    "Temperature (C)":               "temp_c",
+    "Specific Conductance (uS/cm)":  "spec_cond_uScm",
+    "Salinity (PPT)":                "sal_ppt",
+    "Pressure (psia)":               "pressure_psia",
+    "Depth (m)":                     "depth_m",
+    "ODO (%Sat)":                    "odo_pct",
+    "ODO (mg/L)":                    "odo_mgL",
+    "Turbidity (FNU)":               "turbidity_fnu",
+    "exo.temp_C":                    "temp_c",
+    "exo.sal_ppt":                   "sal_ppt",
+    "exo.odo_mgL":                   "odo_mgL",
+}
+
+ALL_FEATURES = [
+    "temp_c", "sal_ppt", "odo_mgL", "depth_m",
+    "pressure_psia", "odo_pct", "spec_cond_uScm", "turbidity_fnu",
+]
+
+SAME_LOCATION_KM = 0.10
+
+# ---------------------------------------------------------------------------
+# Geometry
 # ---------------------------------------------------------------------------
 
 def haversine_km(lat1, lon1, lat2, lon2):
-    """Great-circle distance in kilometres."""
     R = 6371.0
     phi1, phi2 = radians(lat1), radians(lat2)
     dphi = radians(lat2 - lat1)
-    dlambda = radians(lon2 - lon1)
-    a = sin(dphi / 2) ** 2 + cos(phi1) * cos(phi2) * sin(dlambda / 2) ** 2
+    dlam = radians(lon2 - lon1)
+    a = sin(dphi / 2)**2 + cos(phi1) * cos(phi2) * sin(dlam / 2)**2
     return R * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
-def build_edge_index_and_weights(coords, k=4, self_loops=False):
-    """
-    Build a k-NN spatial graph from station coordinates.
-
-    Parameters
-    ----------
-    coords : list of (lat, lon) tuples, length = N_nodes
-    k      : number of nearest neighbours per node
-    self_loops : include self-edges (useful for some GNN formulations)
-
-    Returns
-    -------
-    edge_index : (2, E) int64 numpy array  [source, target]
-    edge_weight: (E,)  float32 — inverse-distance weight, normalised 0-1
-    dist_matrix: (N, N) full pairwise distances in km
-    """
+def build_edge_index_and_weights(coords, k=4):
     n = len(coords)
     D = np.zeros((n, n), dtype=np.float32)
     for i in range(n):
         for j in range(n):
             if i != j:
                 D[i, j] = haversine_km(*coords[i], *coords[j])
-            else:
-                D[i, j] = 0.0
-
     src, dst, weights = [], [], []
     for i in range(n):
-        # sort neighbours by distance (ascending), skip self
-        neighbours = np.argsort(D[i])
-        neighbours = [j for j in neighbours if j != i][:k]
+        neighbours = [j for j in np.argsort(D[i]) if j != i][:k]
         for j in neighbours:
-            src.append(i)
-            dst.append(j)
+            src.append(i); dst.append(j)
             weights.append(1.0 / (D[i, j] + 1e-6))
-
-    if self_loops:
-        for i in range(n):
-            src.append(i)
-            dst.append(i)
-            weights.append(1.0)
-
     edge_index = np.array([src, dst], dtype=np.int64)
-    weights = np.array(weights, dtype=np.float32)
-    weights = weights / weights.max()           # normalise to [0, 1]
-    return edge_index, weights, D
-
+    w = np.array(weights, dtype=np.float32)
+    w = w / w.max()
+    return edge_index, w, D
 
 # ---------------------------------------------------------------------------
-# Load stations
+# 2025 loader
 # ---------------------------------------------------------------------------
 
-def load_station(path: Path) -> pd.DataFrame | None:
+def _load_raw_2025(path):
     df = pd.read_csv(path, low_memory=False)
-
-    # Skip stations that have no coordinate columns
-    if "latitude" not in df.columns or "longitude" not in df.columns:
-        print(f"  [SKIP] {path.name} — no lat/lon columns")
+    if "latitude" not in df.columns:
+        print(f"  [SKIP] {path.name} - no lat/lon")
         return None
-
-    # Timestamp is a Unix epoch float
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
-    df = df.sort_values("datetime").reset_index(drop=True)
-
-    # Take the median lat/lon as the fixed location for this station
-    lat = df["latitude"].median()
-    lon = df["longitude"].median()
-
-    # Keep only needed columns
-    available = [c for c in SENSOR_COLS if c in df.columns]
-    df = df[["datetime"] + available].copy()
-    df.attrs["lat"] = lat
-    df.attrs["lon"] = lon
-    df.attrs["name"] = path.stem
-    return df
-
-
-def resample_station(df: pd.DataFrame, freq="5min") -> pd.DataFrame:
-    """Aggregate high-frequency readings to a regular grid, forward-fill short gaps."""
+    df = df.sort_values("datetime")
+    lat = float(df["latitude"].median())
+    lon = float(df["longitude"].median())
+    rename = {c: COLUMN_MAP[c] for c in df.columns if c in COLUMN_MAP}
+    df = df.rename(columns=rename)[["datetime"] + list(rename.values())].copy()
     df = df.set_index("datetime")
-    # Aggregate (mean) to the target frequency — handles any sub-minute resolution
+    for f in ALL_FEATURES:
+        if f not in df.columns:
+            df[f] = np.nan
+    df.attrs["lat"]  = lat
+    df.attrs["lon"]  = lon
+    df.attrs["name"] = path.stem
+    return df[ALL_FEATURES]
+
+
+def load_2025_stations():
+    stations = []
+    for p in sorted(STATION_DIR.glob("raw-data-platform*.csv")):
+        df = _load_raw_2025(p)
+        if df is not None:
+            stations.append({"df": df, "lat": df.attrs["lat"],
+                              "lon": df.attrs["lon"], "name": df.attrs["name"]})
+    return stations
+
+# ---------------------------------------------------------------------------
+# Cluster co-located 2025 stations
+# ---------------------------------------------------------------------------
+
+def cluster_2025_stations(stations):
+    n = len(stations)
+    D = np.zeros((n, n))
+    for i in range(n):
+        for j in range(n):
+            D[i, j] = haversine_km(stations[i]["lat"], stations[i]["lon"],
+                                    stations[j]["lat"], stations[j]["lon"])
+    visited = [False] * n
+    clusters = []
+    for i in range(n):
+        if visited[i]:
+            continue
+        visited[i] = True
+        group = [i]
+        for j in range(i + 1, n):
+            if not visited[j] and D[i, j] < SAME_LOCATION_KM:
+                group.append(j)
+                visited[j] = True
+        members = [stations[k] for k in group]
+        names   = [m["name"] for m in members]
+        lat_c   = float(np.mean([m["lat"] for m in members]))
+        lon_c   = float(np.mean([m["lon"] for m in members]))
+        if len(members) == 1:
+            df = members[0]["df"]
+            name = names[0]
+        else:
+            print(f"  [MERGE] {names}")
+            resampled = [m["df"].resample("5min").mean() for m in members]
+            df = pd.concat(resampled).groupby(level=0).mean()
+            name = names[0]   # use first name as canonical
+        clusters.append({"df": df, "lat": lat_c, "lon": lon_c,
+                          "name": name, "members": names})
+    return clusters
+
+# ---------------------------------------------------------------------------
+# 2026 loader
+# ---------------------------------------------------------------------------
+MIAMI_TZ = "America/New_York"
+
+def load_2026_station_group(folder):
+    files = sorted(folder.glob("*.csv"))
+    df = pd.concat([pd.read_csv(f, low_memory=False) for f in files], ignore_index=True)
+    df["datetime"] = (
+        pd.to_datetime(df["ts_local"])
+          .dt.tz_localize(MIAMI_TZ, ambiguous="infer", nonexistent="shift_forward")
+          .dt.tz_convert("UTC")
+    )
+    df = df.sort_values("datetime")
+    df = df[df["sled.state"] == "at_bottom"].copy()
+    lat = float(df["gps.lat"].median())
+    lon = float(df["gps.lon"].median())
+    pid = df["platform_id"].iloc[0]
+    rename = {c: COLUMN_MAP[c] for c in df.columns if c in COLUMN_MAP}
+    df = df.rename(columns=rename)[["datetime"] + list(rename.values())].copy()
+    df = df.set_index("datetime")
+    for f in ALL_FEATURES:
+        if f not in df.columns:
+            df[f] = np.nan
+    return {"df": df[ALL_FEATURES], "lat": lat, "lon": lon,
+            "name": folder.name, "platform_id": pid}
+
+
+def load_2026_stations():
+    return [load_2026_station_group(d)
+            for d in sorted(STATION_2026.iterdir()) if d.is_dir()]
+
+# ---------------------------------------------------------------------------
+# Merge 2026 into clusters
+# ---------------------------------------------------------------------------
+
+def merge_2026_into_clusters(clusters, stations_2026):
+    for s26 in stations_2026:
+        best_idx, best_d = None, float("inf")
+        for idx, cl in enumerate(clusters):
+            d = haversine_km(s26["lat"], s26["lon"], cl["lat"], cl["lon"])
+            if d < best_d:
+                best_d, best_idx = d, idx
+        if best_d < SAME_LOCATION_KM:
+            cl = clusters[best_idx]
+            print(f"  [MATCH] 2026 {s26['name']} ({s26['platform_id']}) "
+                  f"-> '{cl['name']}' ({best_d*1000:.0f} m)")
+            combined = pd.concat([cl["df"], s26["df"]]).groupby(level=0).mean()
+            clusters[best_idx] = {**cl, "df": combined}
+        else:
+            print(f"  [NEW NODE] 2026 {s26['name']} ({s26['platform_id']}) "
+                  f"(nearest={best_d:.2f} km)")
+            clusters.append({"df": s26["df"], "lat": s26["lat"], "lon": s26["lon"],
+                              "name": s26["name"], "members": [s26["name"]]})
+    return clusters
+
+# ---------------------------------------------------------------------------
+# Resample
+# ---------------------------------------------------------------------------
+
+def resample_to_grid(df, freq="5min"):
     df = df.resample(freq).mean()
-    df = df.ffill(limit=3)    # fill gaps ≤ 3 steps (≤ 15 min by default)
-    df.index.name = "datetime"
+    df = df.ffill(limit=3)
     return df
 
-
 # ---------------------------------------------------------------------------
-# Load rainfall
+# Rainfall
 # ---------------------------------------------------------------------------
 
-def load_rainfall() -> pd.Series:
-    """Returns a daily rainfall series indexed by UTC date, in inches."""
-    df = pd.read_csv(RAINFALL_CSV)
-    df["date"] = pd.to_datetime(df[["year", "month", "day"]])
-    df = df.set_index("date")["rain_in"].sort_index()
-    return df
+def load_weather() -> pd.DataFrame:
+    """
+    Load all available daily weather records (2025 + 2026) into a single
+    DataFrame indexed by tz-naive UTC date, columns: rain_in, temp_min, temp_max.
+    Missing dates are filled with DOY climatology derived from observed data.
+    """
+    files = sorted(RAINFALL_DIR.glob("*.csv"))
+    dfs = []
+    for f in files:
+        df = pd.read_csv(f)
+        df["date"] = pd.to_datetime(df[["year", "month", "day"]])
+        dfs.append(df[["date", "rain_in", "temp_min", "temp_max"]])
+    weather = pd.concat(dfs, ignore_index=True)
+    weather = weather.drop_duplicates("date").set_index("date").sort_index()
+    return weather
 
 
-def align_rainfall(rain: pd.Series, time_index: pd.DatetimeIndex) -> np.ndarray:
-    """Broadcast daily rainfall to the station time grid (5-min steps)."""
-    # Strip timezone so the date lookup matches the tz-naive rainfall index
+def _build_forcing_array(weather: pd.DataFrame, col: str,
+                         time_index: pd.DatetimeIndex) -> np.ndarray:
+    """Broadcast a daily weather column to the 5-min time_index.
+    Dates outside the measured range are filled with DOY climatology."""
+    series = weather[col]
+    doy_clim = series.groupby(series.index.dayofyear).mean()
     dates = time_index.tz_convert("UTC").normalize().tz_localize(None)
-    rain_reindexed = rain.reindex(dates, method="ffill").fillna(0.0).values.astype(np.float32)
-    return rain_reindexed
+    result = np.zeros(len(dates), dtype=np.float32)
+    idx_set = set(series.index)
+    for i, d in enumerate(dates):
+        if d in idx_set:
+            result[i] = series[d]
+        else:
+            result[i] = float(doy_clim.get(d.dayofyear, 0.0))
+    return result
 
+
+def build_forcing_for_index(time_index: pd.DatetimeIndex):
+    """
+    Returns three (T,) float32 arrays aligned to time_index:
+        rain     — daily precipitation (inches)
+        temp_min — daily minimum air temperature (°C)
+        temp_max — daily maximum air temperature (°C)
+    """
+    weather = load_weather()
+    rain     = _build_forcing_array(weather, "rain_in",  time_index)
+    temp_min = _build_forcing_array(weather, "temp_min", time_index)
+    temp_max = _build_forcing_array(weather, "temp_max", time_index)
+    return rain, temp_min, temp_max
 
 # ---------------------------------------------------------------------------
-# Main preprocessing pipeline
+# Main pipeline
 # ---------------------------------------------------------------------------
 
 def build_dataset(freq="5min", k_neighbours=4):
-    """
-    Returns
-    -------
-    X          : (T, N, F)  float32 — sensor readings (NaN where missing)
-    rain       : (T,)       float32 — aligned daily rainfall
-    edge_index : (2, E)     int64
-    edge_weight: (E,)       float32
-    coords     : list of (lat, lon)
-    node_names : list of str
-    time_index : DatetimeIndex
-    feature_names : list of str
-    """
-    print("Loading stations...")
-    stations = [s for s in (load_station(p) for p in STATION_FILES) if s is not None]
+    print("Loading 2025 stations...")
+    raw_2025 = load_2025_stations()
+    clusters = cluster_2025_stations(raw_2025)
 
-    # Use the UNION of all station time ranges so no station is discarded.
-    # Stations will have NaN outside their own deployment window — the GNN
-    # treats those as missing and imputes from spatial neighbours.
-    resampled_all = [resample_station(s, freq=freq) for s in stations]
-    t_min = min(df.index.min() for df in resampled_all)
-    t_max = max(df.index.max() for df in resampled_all)
+    print("\nLoading 2026 stations...")
+    raw_2026 = load_2026_stations()
+    clusters = merge_2026_into_clusters(clusters, raw_2026)
 
-    print(f"Union time window: {t_min.date()}  →  {t_max.date()}")
+    print(f"\n{len(clusters)} nodes total. Resampling...")
+    resampled = [resample_to_grid(cl["df"], freq) for cl in clusters]
+
+    t_min = min(df.index.min() for df in resampled)
+    t_max = max(df.index.max() for df in resampled)
     common_index = pd.date_range(t_min, t_max, freq=freq, tz="UTC")
     T = len(common_index)
 
-    coords = []
-    node_names = []
-    resampled = []
+    resampled = [df.reindex(common_index) for df in resampled]
 
-    for s, r in zip(stations, resampled_all):
-        r = r.reindex(common_index)   # align to common grid (NaN outside deployment)
-        coords.append((s.attrs["lat"], s.attrs["lon"]))
-        node_names.append(s.attrs["name"])
-        resampled.append(r)
+    N = len(clusters)
+    F = len(ALL_FEATURES)
+    X = np.full((T, N, F), np.nan, dtype=np.float32)
+    for i, df in enumerate(resampled):
+        for j, feat in enumerate(ALL_FEATURES):
+            if feat in df.columns:
+                X[:, i, j] = df[feat].values.astype(np.float32)
 
-    N = len(stations)
+    print("Building forcing (rain + air temp)...")
+    rain, temp_min, temp_max = build_forcing_for_index(common_index)
+    print(f"  rain range:     {rain.min():.2f} – {rain.max():.2f} in")
+    print(f"  air temp range: {temp_min.min():.1f} – {temp_max.max():.1f} °C")
 
-    # Build feature tensor — use intersection of available sensor columns
-    all_cols = [set(r.columns) for r in resampled]
-    common_cols = sorted(set(SENSOR_COLS).intersection(*all_cols))
-    print(f"Common sensor features: {common_cols}")
-
-    X = np.full((T, N, len(common_cols)), np.nan, dtype=np.float32)
-    for i, r in enumerate(resampled):
-        X[:, i, :] = r[common_cols].values.astype(np.float32)
-
-    # Rainfall
-    print("Loading rainfall...")
-    rain_series = load_rainfall()
-    rain = align_rainfall(rain_series, common_index)
-
-    # Graph
     print("Building spatial graph...")
+    coords = [(cl["lat"], cl["lon"]) for cl in clusters]
     edge_index, edge_weight, dist_matrix = build_edge_index_and_weights(coords, k=k_neighbours)
-    print(f"Graph: {N} nodes, {edge_index.shape[1]} edges")
-    print("Distance matrix (km):")
-    for i, name in enumerate(node_names):
-        row = "  ".join(f"{dist_matrix[i,j]:5.2f}" for j in range(N))
-        print(f"  {name}: [{row}]")
+
+    node_names  = [cl["name"] for cl in clusters]
+    short_names = [n.replace("raw-data-platformL", "L").replace("_parameters", "")
+                   for n in node_names]
+
+    print(f"\nGraph: {N} nodes, {edge_index.shape[1]} edges")
+    print(f"Time: {t_min.date()} -> {t_max.date()}  ({T} steps)")
+    print(f"Tensor: {T} x {N} x {F}")
+
+    nan_pct = np.isnan(X).mean() * 100
+    print(f"Overall missing: {nan_pct:.1f}%")
+    for i, sn in enumerate(short_names):
+        pct = np.isnan(X[:, i, :]).mean() * 100
+        print(f"  {sn:40s}: {pct:.1f}% missing")
 
     return {
-        "X": X,                          # (T, N, F)
-        "rain": rain,                    # (T,)
-        "edge_index": edge_index,        # (2, E)
-        "edge_weight": edge_weight,      # (E,)
-        "coords": coords,
-        "node_names": node_names,
-        "time_index": common_index,
-        "feature_names": common_cols,
-        "dist_matrix": dist_matrix,
+        "X":             X,
+        "rain":          rain,
+        "temp_min":      temp_min,
+        "temp_max":      temp_max,
+        "edge_index":    edge_index,
+        "edge_weight":   edge_weight,
+        "coords":        coords,
+        "node_names":    node_names,
+        "time_index":    common_index,
+        "feature_names": ALL_FEATURES,
+        "dist_matrix":   dist_matrix,
     }
 
 
 if __name__ == "__main__":
-    data = build_dataset()
-    X = data["X"]
-    print(f"\nTensor shape: X={X.shape}  (timesteps × stations × features)")
-    nan_pct = np.isnan(X).mean() * 100
-    print(f"Overall missing: {nan_pct:.1f}%")
-    for i, name in enumerate(data["node_names"]):
-        n = np.isnan(X[:, i, :]).mean() * 100
-        print(f"  {name}: {n:.1f}% missing")
+    build_dataset()

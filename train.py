@@ -60,17 +60,17 @@ CKPT_DIR.mkdir(exist_ok=True)
 
 class WindowDataset(Dataset):
     """
-    Yields (x_win, mask_win, rain_win, ts_win) windows.
-    x_win   : (WIN_LEN, N, F)  normalised, NaN → 0 + mask applied
-    mask_win: (WIN_LEN, N, F)  1=present, 0=missing
-    rain_win: (WIN_LEN,)
-    ts_win  : (WIN_LEN,)       unix timestamps (float)
+    Yields (x_win, mask_win, forcing_win, ts_win) windows.
+    x_win      : (WIN_LEN, N, F)  normalised
+    mask_win   : (WIN_LEN, N, F)  1=present, 0=missing
+    forcing_win: (WIN_LEN, 3)     [rain, temp_min, temp_max]
+    ts_win     : (WIN_LEN,)       unix timestamps (float)
     """
 
-    def __init__(self, X_norm, X_raw_mask, rain, timestamps, mask_ratio=MASK_RATIO):
+    def __init__(self, X_norm, X_raw_mask, forcing, timestamps, mask_ratio=MASK_RATIO):
         self.X = X_norm                   # (T, N, F)
         self.true_mask = X_raw_mask       # (T, N, F) 1=real data
-        self.rain = rain                  # (T,)
+        self.forcing = forcing            # (T, 3)
         self.ts = timestamps              # (T,)
         self.mask_ratio = mask_ratio
         self.windows = list(range(0, len(X_norm) - WIN_LEN + 1, STRIDE))
@@ -85,20 +85,18 @@ class WindowDataset(Dataset):
         x   = self.X[s:e].copy()            # (W, N, F)
         msk = self.true_mask[s:e].copy()    # (W, N, F)
 
-        # Randomly corrupt some observed values during training
         if self.mask_ratio > 0:
             rng = np.random.default_rng()
             corruption = rng.random(msk.shape) < self.mask_ratio
-            # Only corrupt positions that are actually observed
             extra_mask = msk.astype(bool) & corruption
             msk[extra_mask] = 0
             x[extra_mask] = 0
 
         return (
-            torch.tensor(x,   dtype=torch.float32),
-            torch.tensor(msk, dtype=torch.float32),
-            torch.tensor(self.rain[s:e], dtype=torch.float32),
-            torch.tensor(self.ts[s:e],  dtype=torch.float64),
+            torch.tensor(x,                  dtype=torch.float32),
+            torch.tensor(msk,                dtype=torch.float32),
+            torch.tensor(self.forcing[s:e],  dtype=torch.float32),
+            torch.tensor(self.ts[s:e],       dtype=torch.float64),
         )
 
 
@@ -112,8 +110,11 @@ def train():
     # -- Data -----------------------------------------------------------------
     print("\n=== Preprocessing ===")
     data = build_dataset()
-    X_raw    = data["X"]             # (T, N, F) with NaNs
-    rain     = data["rain"]          # (T,)
+    X_raw       = data["X"]             # (T, N, F) with NaNs
+    rain        = data["rain"]          # (T,)
+    temp_min    = data["temp_min"]      # (T,)
+    temp_max    = data["temp_max"]      # (T,)
+    forcing     = np.stack([rain, temp_min, temp_max], axis=-1)  # (T, 3)
     edge_index  = data["edge_index"]
     edge_weight = data["edge_weight"]
     ts = np.array([t.timestamp() for t in data["time_index"]], dtype=np.float64)
@@ -133,18 +134,18 @@ def train():
 
     # -- Split: 80 % train, 20 % val (chronological) -------------------------
     split = int(0.8 * T)
-    train_ds = WindowDataset(X_norm[:split],      true_mask[:split],
-                             rain[:split],         ts[:split])
-    val_ds   = WindowDataset(X_norm[split:],      true_mask[split:],
-                             rain[split:],         ts[split:],
-                             mask_ratio=0.0)       # don't extra-corrupt val
+    train_ds = WindowDataset(X_norm[:split],  true_mask[:split],
+                             forcing[:split], ts[:split])
+    val_ds   = WindowDataset(X_norm[split:],  true_mask[split:],
+                             forcing[split:], ts[split:],
+                             mask_ratio=0.0)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,  num_workers=0)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
     # -- Model -----------------------------------------------------------------
     model = BayImputationGNN(
-        n_features=F, n_nodes=N,
+        n_features=F, n_nodes=N, n_forcing=3,
         d_model=D_MODEL, n_gat_layers=N_GAT, n_gru_layers=N_GRU,
     ).to(DEVICE)
     print(f"\nModel parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -165,13 +166,13 @@ def train():
         model.train()
         train_loss = 0.0
 
-        for x_b, msk_b, rain_b, ts_b in train_loader:
-            x_b    = x_b.to(DEVICE)       # (B, W, N, F)
-            msk_b  = msk_b.to(DEVICE)
-            rain_b = rain_b.to(DEVICE)    # (B, W)
-            ts_b   = ts_b.float().to(DEVICE)
+        for x_b, msk_b, forcing_b, ts_b in train_loader:
+            x_b       = x_b.to(DEVICE)        # (B, W, N, F)
+            msk_b     = msk_b.to(DEVICE)
+            forcing_b = forcing_b.to(DEVICE)  # (B, W, 3)
+            ts_b      = ts_b.float().to(DEVICE)
 
-            _, pred = model(x_b, msk_b, rain_b, ei, ew, ts_b)  # (B, W, N, F)
+            _, pred, _ = model(x_b, msk_b, forcing_b, ei, ew, ts_b)
             loss = criterion(pred * msk_b, x_b * msk_b)
 
             optimiser.zero_grad()
@@ -187,10 +188,10 @@ def train():
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_b, msk_b, rain_b, ts_b in val_loader:
+            for x_b, msk_b, forcing_b, ts_b in val_loader:
                 x_b = x_b.to(DEVICE); msk_b = msk_b.to(DEVICE)
-                rain_b = rain_b.to(DEVICE); ts_b = ts_b.float().to(DEVICE)
-                _, pred = model(x_b, msk_b, rain_b, ei, ew, ts_b)
+                forcing_b = forcing_b.to(DEVICE); ts_b = ts_b.float().to(DEVICE)
+                _, pred, _ = model(x_b, msk_b, forcing_b, ei, ew, ts_b)
                 val_loss += criterion(pred * msk_b, x_b * msk_b).item()
         val_loss /= max(len(val_loader), 1)
 
@@ -217,8 +218,11 @@ def impute(checkpoint: str):
     import pandas as pd
 
     data = build_dataset()
-    X_raw    = data["X"]
-    rain     = data["rain"]
+    X_raw       = data["X"]
+    rain        = data["rain"]
+    temp_min    = data["temp_min"]
+    temp_max    = data["temp_max"]
+    forcing     = np.stack([rain, temp_min, temp_max], axis=-1)  # (T, 3)
     edge_index  = data["edge_index"]
     edge_weight = data["edge_weight"]
     ts = np.array([t.timestamp() for t in data["time_index"]], dtype=np.float64)
@@ -230,7 +234,7 @@ def impute(checkpoint: str):
     X_norm    = norm.transform(np.nan_to_num(X_raw, nan=0.0))
     true_mask = (~np.isnan(X_raw)).astype(np.float32)
 
-    model = BayImputationGNN(n_features=F, n_nodes=N,
+    model = BayImputationGNN(n_features=F, n_nodes=N, n_forcing=3,
                               d_model=D_MODEL, n_gat_layers=N_GAT,
                               n_gru_layers=N_GRU).to(DEVICE)
     model.load_state_dict(torch.load(checkpoint, map_location=DEVICE))
@@ -250,12 +254,12 @@ def impute(checkpoint: str):
     with torch.no_grad():
         for s in windows:
             e = s + WIN_LEN
-            x_win   = torch.tensor(X_norm[s:e],    dtype=torch.float32).to(DEVICE)
-            msk_win = torch.tensor(true_mask[s:e],  dtype=torch.float32).to(DEVICE)
-            rain_win = torch.tensor(rain[s:e],       dtype=torch.float32).to(DEVICE)
-            ts_win   = torch.tensor(ts[s:e],         dtype=torch.float32).to(DEVICE)
+            x_win       = torch.tensor(X_norm[s:e],   dtype=torch.float32).to(DEVICE)
+            msk_win     = torch.tensor(true_mask[s:e], dtype=torch.float32).to(DEVICE)
+            forcing_win = torch.tensor(forcing[s:e],   dtype=torch.float32).to(DEVICE)
+            ts_win      = torch.tensor(ts[s:e],        dtype=torch.float32).to(DEVICE)
 
-            imputed, _ = model(x_win, msk_win, rain_win, ei, ew, ts_win)
+            imputed, _, _ = model(x_win, msk_win, forcing_win, ei, ew, ts_win)
             imputed_np = imputed.cpu().numpy()           # (W, N, F)
 
             X_imputed_sum[s:e]   += imputed_np

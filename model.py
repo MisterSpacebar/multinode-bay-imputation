@@ -88,7 +88,7 @@ class SpatialAttentionLayer(nn.Module):
             out = self.norm(out + h)
         else:
             out = self.norm(out)
-        return out
+        return out, attn_norm   # always return weights; callers ignore if unneeded
 
 
 class SpatialGAT(nn.Module):
@@ -100,10 +100,13 @@ class SpatialGAT(nn.Module):
             [SpatialAttentionLayer(d_model, d_model) for _ in range(n_layers)]
         )
 
-    def forward(self, h, edge_index, edge_weight):
+    def forward(self, h, edge_index, edge_weight, collect_attn=False):
+        attn_list = []
         for layer in self.layers:
-            h = layer(h, edge_index, edge_weight)
-        return h
+            h, attn = layer(h, edge_index, edge_weight)
+            if collect_attn:
+                attn_list.append(attn)
+        return h, attn_list
 
 
 # ---------------------------------------------------------------------------
@@ -119,19 +122,22 @@ class BayImputationGNN(nn.Module):
     d_model     : hidden dimension
     n_gat_layers: depth of spatial attention stack
     n_gru_layers: GRU depth
+    n_forcing   : number of external forcing scalars (rain, temp_min, temp_max)
     """
 
     def __init__(self, n_features: int, n_nodes: int,
                  d_model: int = 64,
                  n_gat_layers: int = 3,
-                 n_gru_layers: int = 2):
+                 n_gru_layers: int = 2,
+                 n_forcing: int = 3):
         super().__init__()
         self.n_features = n_features
         self.n_nodes = n_nodes
         self.d_model = d_model
+        self.n_forcing = n_forcing
 
-        # Input dim:  features + mask_flags + rain (1) + sin_hour + cos_hour
-        in_dim = n_features + n_features + 1 + 2
+        # Input dim: features + mask_flags + forcing scalars + sin/cos time
+        in_dim = n_features + n_features + n_forcing + 2
 
         # 1. Node encoder (applied independently per node)
         self.node_encoder = nn.Sequential(
@@ -176,19 +182,20 @@ class BayImputationGNN(nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,           # (B, T, N, F) or (T, N, F)
-        mask: torch.Tensor,        # same shape as x
-        rain: torch.Tensor,        # (B, T) or (T,)
-        edge_index: torch.Tensor,  # (2, E)
-        edge_weight: torch.Tensor, # (E,)
-        timestamps: torch.Tensor,  # (B, T) or (T,)  — unix seconds
+        x: torch.Tensor,            # (B, T, N, F) or (T, N, F)
+        mask: torch.Tensor,         # same shape as x
+        forcing: torch.Tensor,      # (B, T, n_forcing) or (T, n_forcing)
+        edge_index: torch.Tensor,   # (2, E)
+        edge_weight: torch.Tensor,  # (E,)
+        timestamps: torch.Tensor,   # (B, T) or (T,)
+        return_attention: bool = False,
     ):
         # Normalise to always work with a batch dimension
         unbatched = x.dim() == 3
         if unbatched:
             x          = x.unsqueeze(0)
             mask       = mask.unsqueeze(0)
-            rain       = rain.unsqueeze(0)
+            forcing    = forcing.unsqueeze(0)
             timestamps = timestamps.unsqueeze(0)
 
         B, T, N, F = x.shape
@@ -199,9 +206,10 @@ class BayImputationGNN(nn.Module):
         t_enc = self.time_encodings(timestamps.reshape(-1)).view(B, T, 2)
 
         # Build node features (B, T, N, in_dim)
-        rain_exp = rain.view(B, T, 1, 1).expand(B, T, N, 1)
-        t_exp    = t_enc.view(B, T, 1, 2).expand(B, T, N, 2)
-        node_in  = torch.cat([x_filled, mask.float(), rain_exp, t_exp], dim=-1)
+        # forcing: (B, T, n_forcing) -> (B, T, N, n_forcing)
+        forcing_exp = forcing.unsqueeze(2).expand(B, T, N, self.n_forcing)
+        t_exp       = t_enc.view(B, T, 1, 2).expand(B, T, N, 2)
+        node_in     = torch.cat([x_filled, mask.float(), forcing_exp, t_exp], dim=-1)
 
         # 1. Node encoder — flatten all dims for shared linear
         h_enc = self.node_encoder(node_in.view(B * T * N, -1))
@@ -217,7 +225,10 @@ class BayImputationGNN(nn.Module):
         ei_t  = torch.stack([src_t, dst_t], dim=0)
 
         h_flat    = h_enc.view(BT * N, self.d_model)
-        h_spatial = self.spatial(h_flat, ei_t, ew_t).view(B, T, N, self.d_model)
+        h_spatial_flat, attn_list = self.spatial(
+            h_flat, ei_t, ew_t, collect_attn=return_attention
+        )
+        h_spatial = h_spatial_flat.view(B, T, N, self.d_model)
 
         # 3. Temporal GRU — (B*N, T, d)
         h_t   = h_spatial.permute(0, 2, 1, 3).reshape(B * N, T, self.d_model)
@@ -229,9 +240,24 @@ class BayImputationGNN(nn.Module):
 
         imputed = torch.where(mask.bool(), x_filled, pred)
 
+        # Build (N, N) attention matrix averaged over layers and B*T frames
+        attn_matrix = None
+        if return_attention and attn_list:
+            # attn_list: list of (B*T*E,) tensors, one per GAT layer
+            # Average across layers → (B*T*E,), then reshape to (B*T, E) → mean over frames → (E,)
+            avg = torch.stack([a for a in attn_list], dim=0).mean(0)  # (B*T*E,)
+            avg = avg.view(BT, E).mean(0)                              # (E,)
+            # Scatter to (N, N)
+            orig_src = edge_index[0]  # (E,) — un-tiled
+            orig_dst = edge_index[1]
+            mat = torch.zeros(N, N, device=x.device)
+            for k in range(E):
+                mat[orig_dst[k], orig_src[k]] = avg[k]
+            attn_matrix = mat
+
         if unbatched:
-            return imputed.squeeze(0), pred.squeeze(0)
-        return imputed, pred
+            return imputed.squeeze(0), pred.squeeze(0), attn_matrix
+        return imputed, pred, attn_matrix
 
 
 # ---------------------------------------------------------------------------

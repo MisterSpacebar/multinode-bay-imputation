@@ -347,5 +347,84 @@ def build_dataset(freq="5min", k_neighbours=4):
     }
 
 
+# ---------------------------------------------------------------------------
+# 2021-2024 historical grab-sample loader (for FCM nutrient analysis)
+# ---------------------------------------------------------------------------
+
+GRAB_SAMPLE_CSV  = DATA_DIR / "2021_to_2024" / "BB_thru2024.csv"
+
+# Columns to keep from the grab-sample file, mapped to canonical names
+GRAB_RENAME = {
+    "temp":        "temp_c",
+    "sal":         "sal_ppt",
+    "spc_scm":     "spec_cond_uScm",
+    "do_per":      "odo_pct",
+    "do_mgL":      "odo_mgL",
+    "ph":          "ph",
+    "chl_exo_ugL": "chl_a_ugL",
+    "secchi":      "secchi_m",
+    "no2no3":      "no2no3_umolL",
+    "nh4":         "nh4_umolL",
+    "po4":         "po4_umolL",
+    "din":         "din_umolL",
+}
+
+# Nutrient / extra features that appear only in the grab-sample data
+GRAB_EXTRA_FEATURES = ["ph", "chl_a_ugL", "secchi_m", "no2no3_umolL",
+                        "nh4_umolL", "po4_umolL", "din_umolL"]
+
+
+def load_historical_grab_samples(
+    site_types: list[str] | None = None,
+    sample_type: str = "Surface",
+) -> pd.DataFrame:
+    """
+    Load the 2021-2024 discrete grab-sample data and return a monthly
+    DataFrame spatially averaged across all qualifying sites.
+
+    Parameters
+    ----------
+    site_types  : list of site_type strings to include, e.g.
+                  ['Biscayne Bay'].  None = all types.
+    sample_type : 'Surface' | 'Bottom' | None (None = both).
+
+    Returns
+    -------
+    monthly_df : DatetimeIndex (month-start, UTC-naive), columns = canonical
+                 feature names (overlapping + extra nutrient features).
+                 Missing months are NaN.
+    """
+    df = pd.read_csv(GRAB_SAMPLE_CSV, encoding="latin-1", low_memory=False)
+
+    # Parse datetime (EST → treat as tz-naive; close enough for monthly agg)
+    df["datetime"] = pd.to_datetime(
+        df["date"] + " " + df["time"],
+        format="%m/%d/%Y %H:%M",
+        errors="coerce",
+    )
+    df = df.dropna(subset=["datetime"])
+
+    # Filters
+    if sample_type is not None:
+        df = df[df["sample_type"] == sample_type]
+    if site_types is not None:
+        df = df[df["site_type"].isin(site_types)]
+
+    # Keep and rename relevant columns
+    keep = [c for c in GRAB_RENAME if c in df.columns]
+    sub = df[["datetime"] + keep].copy()
+    sub = sub.rename(columns=GRAB_RENAME)
+    sub = sub.set_index("datetime")
+
+    # Convert all columns to numeric
+    for col in sub.columns:
+        sub[col] = pd.to_numeric(sub[col], errors="coerce")
+
+    # Monthly spatial average across all included sites
+    monthly = sub.resample("MS").mean()  # MS = month-start
+
+    return monthly
+
+
 if __name__ == "__main__":
     build_dataset()

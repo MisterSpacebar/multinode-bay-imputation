@@ -5,12 +5,12 @@ Fuzzy Cognitive Map (FCM) for Biscayne Bay water quality.
 
 Two FCMs are built and compared:
 
-  Physical FCM  (daily resolution, 2025-03 → 2026-06)
+  Physical FCM  (daily resolution, 2025-03 → 2026-07)
   ─────────────────────────────────────────────────────
   11 concepts = 3 forcing + 8 continuous sensor features
   Data source: imputed 5-min sensor timeseries, resampled to daily means
 
-  Nutrient FCM  (monthly resolution, 2021-09 → 2026-06)
+  Nutrient FCM  (monthly resolution, 2021-09 → 2026-07)
   ───────────────────────────────────────────────────────
   16 concepts = 3 forcing + 8 sensor features + 5 nutrient features
     pH, Chl-a (µg/L), Secchi depth (m), NO2+NO3 (µmol/L), DIN (µmol/L)
@@ -109,12 +109,13 @@ CONCEPT_LABELS = {
 }
 
 IMPUTED_FILES = {
-    "L0":           "raw-data-platformL0_parameters_imputed.csv",
-    "L1":           "raw-data-platformL1_parameters_imputed.csv",
-    "L2":           "raw-data-platformL2_parameters_imputed.csv",
-    "L6":           "raw-data-platformL6_parameters_imputed.csv",
-    "L7":           "raw-data-platformL7_parameters_imputed.csv",
-    "biscayne_bay": "biscayne_bay_imputed.csv",
+    "L0":                  "raw-data-platformL0_parameters_imputed.csv",
+    "L1":                  "raw-data-platformL1_parameters_imputed.csv",
+    "L2":                  "raw-data-platformL2_parameters_imputed.csv",
+    "L6":                  "raw-data-platformL6_parameters_imputed.csv",
+    "L7":                  "raw-data-platformL7_parameters_imputed.csv",
+    "biscayne_bay":        "biscayne_bay_imputed.csv",
+    "consolidated_crest5": "consolidated_crest5_imputed.csv",
 }
 
 # ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ IMPUTED_FILES = {
 def load_physical_concept_timeseries() -> pd.DataFrame:
     """
     Daily DataFrame with columns = PHYS_CONCEPTS (11).
-    Sensor features are spatially averaged across all 6 imputed nodes,
+    Sensor features are spatially averaged across all imputed nodes,
     weighting observed > imputed.
     """
     print("Loading imputed node data...")
@@ -192,7 +193,7 @@ def load_nutrient_concept_timeseries() -> pd.DataFrame:
       Forcing signals: NaN (no weather data for this period; excluded from
       regression targets but carried as NaN).
 
-    2025-03 → 2026-06: from imputed continuous sensor data (resampled
+    2025-03 → 2026-07: from imputed continuous sensor data (resampled
       to monthly means) + weather forcing.
       Nutrient columns: NaN (continuous sensors don't measure nutrients).
     """

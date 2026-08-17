@@ -35,21 +35,23 @@ FEATURE_LABELS = {
 SENSOR_COLS = list(FEATURE_LABELS.keys())
 
 NODE_COLORS = {
-    "L0":           "#e6194b",
-    "L1":           "#3cb44b",
-    "L2":           "#4363d8",
-    "L6":           "#f58231",
-    "L7":           "#911eb4",
-    "biscayne_bay": "#42d4f4",
+    "L0":                  "#e6194b",
+    "L1":                  "#3cb44b",
+    "L2":                  "#4363d8",
+    "L6":                  "#f58231",
+    "L7":                  "#911eb4",
+    "biscayne_bay":        "#42d4f4",
+    "consolidated_crest5": "#a9a9a9",
 }
 
 IMPUTED_FILES = {
-    "L0":           "raw-data-platformL0_parameters_imputed.csv",
-    "L1":           "raw-data-platformL1_parameters_imputed.csv",
-    "L2":           "raw-data-platformL2_parameters_imputed.csv",
-    "L6":           "raw-data-platformL6_parameters_imputed.csv",
-    "L7":           "raw-data-platformL7_parameters_imputed.csv",
-    "biscayne_bay": "biscayne_bay_imputed.csv",
+    "L0":                  "raw-data-platformL0_parameters_imputed.csv",
+    "L1":                  "raw-data-platformL1_parameters_imputed.csv",
+    "L2":                  "raw-data-platformL2_parameters_imputed.csv",
+    "L6":                  "raw-data-platformL6_parameters_imputed.csv",
+    "L7":                  "raw-data-platformL7_parameters_imputed.csv",
+    "biscayne_bay":        "biscayne_bay_imputed.csv",
+    "consolidated_crest5": "consolidated_crest5_imputed.csv",
 }
 
 
@@ -206,14 +208,15 @@ def plot_spatial_graph():
     attn = pd.read_csv(ANALYSIS_DIR / "attention_weights.csv", index_col=0)
     node_names = attn.columns.tolist()
 
-    # Approximate coordinates for the 6 nodes (from preprocess output)
+    # Approximate coordinates for the 7 nodes (from preprocess output)
     COORDS = {
-        "L0":           (25.911432, -80.137273),
-        "L1":           (25.874909, -80.183208),
-        "L2":           (25.853710, -80.159411),
-        "L6":           (25.844242, -80.148913),
-        "L7":           (25.779099, -80.208921),
-        "biscayne_bay": (25.870369, -80.164941),
+        "L0":                    (25.911432, -80.137273),
+        "L1":                    (25.874909, -80.183208),
+        "L2":                    (25.853710, -80.159411),
+        "L6":                    (25.844242, -80.148913),
+        "L7":                    (25.779099, -80.208921),
+        "biscayne_bay":          (25.870369, -80.164941),
+        "consolidated_crest5":   (25.726950, -80.269660),
     }
 
     fig, ax = plt.subplots(figsize=(9, 11))

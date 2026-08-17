@@ -52,6 +52,18 @@ COLUMN_MAP = {
     "exo.odo_mgL":                   "odo_mgL",
 }
 
+# Column mapping for the consolidated 2026 CSV (new schema)
+CONSOLIDATED_COL_MAP = {
+    "Dissolved Oxygen (mg/L)": "odo_mgL",
+    "Temperature (\u00b0C)":   "temp_c",        # Temperature (°C)
+    "Salinity (ppt)":          "sal_ppt",
+    "Oxygen Saturation (%)":   "odo_pct",
+    "Turbidity (FNU)":         "turbidity_fnu",
+}
+
+BOUYS_DIR = DATA_DIR / "bouys"
+CONSOLIDATED_MERGE_KM = 3.0    # match new stations to existing nodes within 3 km
+
 ALL_FEATURES = [
     "temp_c", "sal_ppt", "odo_mgL", "depth_m",
     "pressure_psia", "odo_pct", "spec_cond_uScm", "turbidity_fnu",
@@ -167,25 +179,44 @@ def cluster_2025_stations(stations):
 # ---------------------------------------------------------------------------
 MIAMI_TZ = "America/New_York"
 
+def _load_station_file(path):
+    """Load one station CSV regardless of whether it uses the old or new schema."""
+    raw = pd.read_csv(path, low_memory=False)
+    if "ts_local" in raw.columns:
+        # Old schema: ts_local / exo.* / sled.state / gps.*
+        raw["datetime"] = (
+            pd.to_datetime(raw["ts_local"])
+              .dt.tz_localize(MIAMI_TZ, ambiguous="infer", nonexistent="shift_forward")
+              .dt.tz_convert("UTC")
+        )
+        raw = raw[raw["sled.state"] == "at_bottom"].copy()
+        rename = {c: COLUMN_MAP[c] for c in raw.columns if c in COLUMN_MAP}
+        raw = raw.rename(columns=rename)
+        raw["_lat"] = raw["gps.lat"]
+        raw["_lon"] = raw["gps.lon"]
+        raw["_pid"] = raw["platform_id"]
+    else:
+        # New schema: Timestamp (UTC) / full column names / Sled state
+        raw["datetime"] = pd.to_datetime(raw["Timestamp (UTC)"], format="ISO8601", utc=True)
+        raw = raw[raw["Sled state"].str.lower().str.contains("bottom", na=False)].copy()
+        rename = {c: CONSOLIDATED_COL_MAP[c] for c in raw.columns if c in CONSOLIDATED_COL_MAP}
+        raw = raw.rename(columns=rename)
+        raw["_lat"] = raw["Latitude"]
+        raw["_lon"] = raw["Longitude"]
+        raw["_pid"] = raw["Station ID"]
+    return raw
+
+
 def load_2026_station_group(folder):
-    files = sorted(folder.glob("*.csv"))
-    df = pd.concat([pd.read_csv(f, low_memory=False) for f in files], ignore_index=True)
-    df["datetime"] = (
-        pd.to_datetime(df["ts_local"])
-          .dt.tz_localize(MIAMI_TZ, ambiguous="infer", nonexistent="shift_forward")
-          .dt.tz_convert("UTC")
-    )
-    df = df.sort_values("datetime")
-    df = df[df["sled.state"] == "at_bottom"].copy()
-    lat = float(df["gps.lat"].median())
-    lon = float(df["gps.lon"].median())
-    pid = df["platform_id"].iloc[0]
-    rename = {c: COLUMN_MAP[c] for c in df.columns if c in COLUMN_MAP}
-    df = df.rename(columns=rename)[["datetime"] + list(rename.values())].copy()
+    frames = [_load_station_file(f) for f in sorted(folder.glob("*.csv"))]
+    df = pd.concat(frames, ignore_index=True).sort_values("datetime")
+    lat = float(df["_lat"].median())
+    lon = float(df["_lon"].median())
+    pid = df["_pid"].iloc[0]
     df = df.set_index("datetime")
-    for f in ALL_FEATURES:
-        if f not in df.columns:
-            df[f] = np.nan
+    for feat in ALL_FEATURES:
+        if feat not in df.columns:
+            df[feat] = np.nan
     return {"df": df[ALL_FEATURES], "lat": lat, "lon": lon,
             "name": folder.name, "platform_id": pid}
 
@@ -193,6 +224,81 @@ def load_2026_station_group(folder):
 def load_2026_stations():
     return [load_2026_station_group(d)
             for d in sorted(STATION_2026.iterdir()) if d.is_dir()]
+
+# ---------------------------------------------------------------------------
+# Consolidated 2026 loader  (new single-file schema, July 2026 onwards)
+# ---------------------------------------------------------------------------
+
+def load_consolidated_2026(bouys_dir=BOUYS_DIR):
+    """
+    Load all bouy_*.csv files from water_data/bouys/ (hydrosphere floating buoys).
+    Returns a list of station dicts compatible with merge_consolidated_into_clusters.
+    """
+    bouys_dir = Path(bouys_dir)
+    files = sorted(bouys_dir.glob("bouy_*.csv"))
+    if not files:
+        return []
+
+    df_all = pd.concat(
+        [pd.read_csv(f, low_memory=False) for f in files], ignore_index=True
+    )
+    df_all["datetime"] = pd.to_datetime(df_all["Timestamp (UTC)"], format="ISO8601", utc=True)
+
+    stations = []
+    for sid, grp in df_all.groupby("Station ID"):
+        grp = grp.copy().sort_values("datetime")
+        # All rows from the buoy files are valid (hydrosphere, no sled filter)
+
+        lat = float(grp["Latitude"].median())
+        lon = float(grp["Longitude"].median())
+        name = f"consolidated_{sid}"
+
+        rename = {c: CONSOLIDATED_COL_MAP[c] for c in grp.columns if c in CONSOLIDATED_COL_MAP}
+        df = grp.rename(columns=rename)[["datetime"] + list(rename.values())].copy()
+        df = df.set_index("datetime")
+        for f in ALL_FEATURES:
+            if f not in df.columns:
+                df[f] = np.nan
+        stations.append({
+            "df": df[ALL_FEATURES],
+            "lat": lat,
+            "lon": lon,
+            "name": name,
+            "platform_id": sid,
+        })
+
+    return stations
+
+
+def merge_consolidated_into_clusters(clusters, stations, threshold_km=CONSOLIDATED_MERGE_KM):
+    """
+    Like merge_2026_into_clusters but uses a configurable distance threshold.
+    Stations within *threshold_km* are averaged into the nearest cluster;
+    stations beyond that distance become new nodes.
+    """
+    for s in stations:
+        best_idx, best_d = None, float("inf")
+        for idx, cl in enumerate(clusters):
+            d = haversine_km(s["lat"], s["lon"], cl["lat"], cl["lon"])
+            if d < best_d:
+                best_d, best_idx = d, idx
+        if best_d < threshold_km:
+            cl = clusters[best_idx]
+            pid = s.get("platform_id", s["name"])
+            print(f"  [MATCH] consolidated {pid} -> '{cl['name']}' ({best_d*1000:.0f} m)")
+            combined = pd.concat([cl["df"], s["df"]]).groupby(level=0).mean()
+            clusters[best_idx] = {**cl, "df": combined}
+        else:
+            pid = s.get("platform_id", s["name"])
+            print(f"  [NEW NODE] consolidated {pid} (nearest={best_d:.2f} km)")
+            clusters.append({
+                "df": s["df"],
+                "lat": s["lat"],
+                "lon": s["lon"],
+                "name": s["name"],
+                "members": [s["name"]],
+            })
+    return clusters
 
 # ---------------------------------------------------------------------------
 # Merge 2026 into clusters
@@ -290,6 +396,13 @@ def build_dataset(freq="5min", k_neighbours=4):
     print("\nLoading 2026 stations...")
     raw_2026 = load_2026_stations()
     clusters = merge_2026_into_clusters(clusters, raw_2026)
+
+    print("\nLoading buoy data (water_data/bouys/)...")
+    consolidated_2026 = load_consolidated_2026()
+    if consolidated_2026:
+        clusters = merge_consolidated_into_clusters(clusters, consolidated_2026)
+    else:
+        print("  (no consolidated file found, skipping)")
 
     print(f"\n{len(clusters)} nodes total. Resampling...")
     resampled = [resample_to_grid(cl["df"], freq) for cl in clusters]

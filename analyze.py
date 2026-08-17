@@ -262,8 +262,11 @@ def print_summary(ch_imp, cross_df, attn_df):
     print("=" * 60)
 
     print("\nFeature ranking by imputation importance (most → least):")
+    imp_abs = ch_imp["importance"].abs()
+    imp_max = imp_abs.max()
     for _, row in ch_imp.iterrows():
-        bar = "#" * int(row["importance"] / ch_imp["importance"].max() * 20 + 0.5)
+        ratio = imp_abs.loc[row.name] / imp_max if imp_max > 0 else 0.0
+        bar = "#" * int(ratio * 20 + 0.5)
         print(f"  {row['feature']:20s}  {row['importance']:+.6f}  {bar}")
 
     print("\nStrongest cross-feature dependencies (src → tgt):")

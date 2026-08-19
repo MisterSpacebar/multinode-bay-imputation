@@ -52,6 +52,7 @@ from pathlib import Path
 from fcm import (
     load_nutrient_concept_timeseries,
     learn_fcm_weights,
+    select_optimal_lag,
     fcm_simulate,
     NUTR_CONCEPTS, N_FORCING, N_NUTR, CONCEPT_LABELS,
     ANALYSIS_DIR, VIZ_DIR,
@@ -115,8 +116,12 @@ def prepare_data() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
                    was actually observed (not NaN-filled)
     """
     ts = load_nutrient_concept_timeseries()
+    best_lag = select_optimal_lag(
+        ts, NUTR_CONCEPTS, N_FORCING,
+        candidate_lags=[1, 2, 3], alpha=1.5, tag="Validation",
+    )
     W, _, col_min, col_range = learn_fcm_weights(
-        ts, NUTR_CONCEPTS, N_FORCING, alpha=1.5, lag=1, tag="Validation"
+        ts, NUTR_CONCEPTS, N_FORCING, alpha=1.5, lag=best_lag, tag="Validation"
     )
     # Drop rows where ALL endogenous concepts are missing
     endo_cols = [NUTR_CONCEPTS[i] for i in ENDO_IDXS]

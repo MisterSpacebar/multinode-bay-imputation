@@ -1,0 +1,887 @@
+BISCAYNE BAY WATER QUALITY ANALYSIS — FIGURE SUMMARY v2
+Generated: 2026-08-18 23:36
+Tables show the underlying data for every chart and figure.
+========================================================================
+
+========================================================================
+SECTION 1 — ST-GNN IMPUTATION RESULTS (FIGURES 01–07)
+========================================================================
+
+------------------------------------------------------------
+Figure 01 — Time-series overview
+------------------------------------------------------------
+Data: hourly-resampled observed + imputed values for temp_c, sal_ppt,
+odo_mgL at all 7 nodes. Imputed regions are shaded orange in the chart.
+No single table — see Figure 06 per-node detail tables below (Sec 1).
+
+------------------------------------------------------------
+Figure 02 — Observed vs imputed coverage (% missing per node)
+------------------------------------------------------------
+Source: build_dataset() output at last run.
+
+  Node                 Missing (%)  Observed (%)
+  -------------------  -----------  ------------
+  L0                   68.6         31.4        
+  L1                   52.2         47.8        
+  L2                   39.6         60.4        
+  L6                   89.4         10.6        
+  L7                   85.0         15.0        
+  biscayne_bay         84.8         15.2        
+  consolidated_crest5  92.5         7.5         
+
+------------------------------------------------------------
+Figure 03 — Channel permutation importance
+------------------------------------------------------------
+Metric: delta loss = (loss with feature masked) - (baseline loss).
+Negative = masking that feature hurts reconstruction (feature is useful).
+Source: analysis/channel_importance.csv
+
+  Feature         Baseline Loss  Masked Loss  Delta (Importance)
+  --------------  -------------  -----------  ------------------
+  temp_c          0.002123       0.001003     -0.001120         
+  sal_ppt         0.002123       0.001159     -0.000964         
+  turbidity_fnu   0.002123       0.001848     -0.000275         
+  odo_mgL         0.002123       0.002046     -0.000077         
+  odo_pct         0.002123       0.002112     -0.000012         
+  spec_cond_uScm  0.002123       0.002123     0.000000          
+  depth_m         0.002123       0.002123     0.000000          
+  pressure_psia   0.002123       0.002123     0.000000          
+
+------------------------------------------------------------
+Figure 03b — Cross-feature dependency matrix
+------------------------------------------------------------
+Entry [row, col]: extra loss on 'col' feature when 'row' is also masked.
+Positive = row feature helps predict col feature.
+Source: analysis/cross_feature_matrix.csv
+
+                  temp_c          sal_ppt         odo_mgL         depth_m         pressure_psia   odo_pct         spec_cond_uScm  turbidity_fnu 
+  ------------------------------------------------------------------------------------------------------------------------------------------------
+  temp_c          0.00000         -0.00087        -0.00110        -0.00112        -0.00112        -0.00105        -0.00112        -0.00106      
+  sal_ppt         -0.00072        0.00000         -0.00095        -0.00096        -0.00096        -0.00100        -0.00096        -0.00088      
+  odo_mgL         -0.00006        -0.00007        0.00000         -0.00008        -0.00008        -0.00007        -0.00008        -0.00009      
+  depth_m         0.00000         0.00000         0.00000         0.00000         0.00000         0.00000         0.00000         0.00000       
+  pressure_psia   0.00000         0.00000         0.00000         0.00000         0.00000         0.00000         0.00000         0.00000       
+  odo_pct         0.00005         -0.00004        -0.00001        -0.00001        -0.00001        0.00000         -0.00001        -0.00005      
+  spec_cond_uScm  0.00000         0.00000         0.00000         0.00000         0.00000         0.00000         0.00000         0.00000       
+  turbidity_fnu   -0.00022        -0.00019        -0.00029        -0.00027        -0.00027        -0.00032        -0.00027        0.00000       
+
+------------------------------------------------------------
+Figure 04 — Spatial graph (top edge importances)
+------------------------------------------------------------
+Edge importance = increase in reconstruction loss when that directed
+edge is removed from the graph attention layer.
+Source: analysis/spatial_importance.csv
+
+  Source        Target        Importance  
+  ------------  ------------  ------------
+  L2            L6            0.000011266 
+  L6            L2            0.000007519 
+  biscayne_bay  L1            0.000005419 
+  L6            L1            0.000003212 
+  L0            L6            0.000003155 
+  L1            biscayne_bay  -0.000002666
+  biscayne_bay  L0            0.000002560 
+  L6            L0            -0.000002031
+  biscayne_bay  L6            -0.000001988
+  L0            biscayne_bay  -0.000001880
+  L1            L0            0.000001521 
+  L2            biscayne_bay  -0.000000968
+  L2            L0            0.000000678 
+  L2            L1            -0.000000570
+  L0            L1            -0.000000547
+
+------------------------------------------------------------
+Figure 05 — GAT attention weight matrix
+------------------------------------------------------------
+Entry [row, col]: mean attention weight that node 'row' (target)
+places on node 'col' (source) when computing its spatial embedding.
+Rows sum to 1 for each target node. Source: analysis/attention_weights.csv
+
+                       L0                   L1                   L2                   L6                   L7                   biscayne_bay         consolidated_crest5
+  ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  L0                   0.0000               0.1182               0.3625               0.3490               0.0000               0.1702               0.0000             
+  L1                   0.1793               0.0000               0.2125               0.1834               0.1431               0.1463               0.1353             
+  L2                   0.1718               0.0710               0.0000               0.3550               0.1383               0.1350               0.1289             
+  L6                   0.1745               0.0666               0.3744               0.0000               0.1449               0.1052               0.1345             
+  L7                   0.0000               0.0000               0.0000               0.0000               0.0000               0.0000               1.0000             
+  biscayne_bay         0.2358               0.1330               0.3687               0.2625               0.0000               0.0000               0.0000             
+  consolidated_crest5  0.0000               0.0000               0.0000               0.0000               1.0000               0.0000               0.0000             
+
+------------------------------------------------------------
+Figure 06 — Per-node detail (seasonal medians, observed only)
+------------------------------------------------------------
+Temperature (°C) — observed values only (imputed masked out)
+
+  station              2025 Aut(SON)  2025 Spr(MAM)  2025 Sum(JJA)  2026 Spr(MAM)  2026 Sum(JJA)  2026 Win(DJF)
+  -------------------  -------------  -------------  -------------  -------------  -------------  -------------
+  L0                   nan            27.42          30.46          nan            30.94          nan          
+  L1                   28.71          27.27          30.68          25.86          30.73          21.14        
+  L2                   27.74          26.69          30.62          25.52          30.87          23.24        
+  L6                   nan            30.80          31.10          23.27          nan            21.70        
+  L7                   25.74          nan            nan            nan            31.05          24.87        
+  biscayne_bay         nan            nan            nan            26.95          32.26          21.25        
+  consolidated_crest5  nan            nan            nan            nan            31.34          nan          
+
+Salinity (PPT)
+
+  station              2025 Aut(SON)  2025 Spr(MAM)  2025 Sum(JJA)  2026 Spr(MAM)  2026 Sum(JJA)  2026 Win(DJF)
+  -------------------  -------------  -------------  -------------  -------------  -------------  -------------
+  L0                   nan            35.41          31.60          nan            33.75          nan          
+  L1                   0.36           0.50           0.29           0.61           0.33           0.44         
+  L2                   0.65           26.72          15.50          33.48          6.91           32.09        
+  L6                   nan            34.52          33.61          35.29          nan            32.77        
+  L7                   19.23          nan            nan            nan            15.89          12.63        
+  biscayne_bay         nan            nan            nan            32.63          10.12          34.45        
+  consolidated_crest5  nan            nan            nan            nan            21.59          nan          
+
+Dissolved Oxygen mg/L
+
+  station              2025 Aut(SON)  2025 Spr(MAM)  2025 Sum(JJA)  2026 Spr(MAM)  2026 Sum(JJA)  2026 Win(DJF)
+  -------------------  -------------  -------------  -------------  -------------  -------------  -------------
+  L0                   nan            5.29           4.43           nan            5.94           nan          
+  L1                   1.74           6.50           4.25           4.49           3.91           5.91         
+  L2                   2.18           5.36           4.40           5.37           3.69           5.44         
+  L6                   nan            6.11           5.95           5.49           nan            0.95         
+  L7                   4.27           nan            nan            nan            4.69           3.22         
+  biscayne_bay         nan            nan            nan            5.95           4.44           6.96         
+  consolidated_crest5  nan            nan            nan            nan            2.74           nan          
+
+------------------------------------------------------------
+Figure 07 — Monthly salinity boxplot (median per calendar month)
+------------------------------------------------------------
+Pooled observed salinity across all 7 nodes, by calendar month.
+
+  Month  Median  Q25   Q75    Min   Max     N    
+  -----  ------  ----  -----  ----  ------  -----
+  Jan    0.86    0.59  32.94  0.00  73.75   19092
+  Feb    32.78   0.38  34.56  0.03  39.97   16620
+  Mar    31.43   0.79  33.19  0.00  36.02   34843
+  Apr    18.18   0.50  32.36  0.00  37.81   26736
+  May    27.08   0.89  34.36  0.00  39.59   47138
+  Jun    16.92   1.73  30.70  0.00  196.00  77847
+  Jul    17.10   2.84  28.42  0.01  41.05   82085
+  Aug    13.04   0.38  27.76  0.06  36.03   21040
+  Sep    0.67    0.32  1.55   0.00  30.61   9671 
+  Oct    12.60   2.49  26.45  0.00  127.86  10920
+  Nov    0.26    0.00  21.66  0.00  28.37   16373
+  Dec    0.00    0.00  0.01   0.00  18.48   3923 
+
+========================================================================
+SECTION 2 — PHYSICAL FCM  (FIGURES 08–11)
+========================================================================
+Daily resolution, 2025-2026. Forcing: Net Water (Rain-PET), temp_min,
+temp_max. Optimal lag = 1 day (selected by held-out validation MSE).
+
+------------------------------------------------------------
+Figures 08 & 09 — Physical FCM weight matrix and causal graph
+------------------------------------------------------------
+Source: analysis/fcm_weights_physical.csv
+Full 11×11 weight matrix (rows=source, cols=target):
+
+                        Net Water (Rain−PET)  Air Temp Min          Air Temp Max          Water Temp            Salinity              ODO (mg/L)            Depth                 Pressure              ODO (%Sat)            Spec. Cond.           Turbidity           
+  ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Net Water (Rain−PET)  0.000                 0.000                 0.000                 -0.016                -0.109                0.080                 -0.045                -0.081                0.093                 -0.062                0.072               
+  Air Temp Min          0.000                 0.000                 0.000                 0.224                 0.169                 0.106                 0.041                 -0.016                0.126                 0.215                 0.104               
+  Air Temp Max          0.000                 0.000                 0.000                 0.132                 0.032                 0.141                 0.033                 0.025                 0.146                 0.034                 -0.020              
+  Water Temp            0.000                 0.000                 0.000                 0.846                 -0.058                -0.148                -0.013                0.250                 -0.221                -0.058                -0.022              
+  Salinity              0.000                 0.000                 0.000                 0.024                 0.950                 0.009                 0.036                 0.052                 -0.023                0.593                 -0.022              
+  ODO (mg/L)            0.000                 0.000                 0.000                 -0.099                0.074                 0.263                 0.035                 0.053                 0.291                 0.164                 -0.029              
+  Depth                 0.000                 0.000                 0.000                 -0.101                -0.045                0.035                 0.914                 0.626                 0.056                 -0.078                0.086               
+  Pressure              0.000                 0.000                 0.000                 0.235                 -0.008                0.053                 0.669                 1.000                 0.009                 -0.041                -0.143              
+  ODO (%Sat)            0.000                 0.000                 0.000                 -0.187                0.047                 0.317                 0.056                 0.011                 0.381                 0.187                 0.043               
+  Spec. Cond.           0.000                 0.000                 0.000                 -0.016                0.529                 0.176                 -0.039                -0.032                0.201                 0.814                 0.083               
+  Turbidity             0.000                 0.000                 0.000                 -0.030                -0.050                -0.003                0.099                 -0.070                0.044                 0.015                 0.990               
+
+Top causal edges (|weight| > 0.05):
+
+  Source        Direction  Target       Weight  Effect    
+  ------------  ---------  -----------  ------  ----------
+  Pressure      →          Depth        0.669   promotes  
+  Depth         →          Pressure     0.626   promotes  
+  Salinity      →          Spec. Cond.  0.593   promotes  
+  Spec. Cond.   →          Salinity     0.529   promotes  
+  ODO (%Sat)    →          ODO (mg/L)   0.317   promotes  
+  ODO (mg/L)    →          ODO (%Sat)   0.291   promotes  
+  Water Temp    →          Pressure     0.250   promotes  
+  Pressure      →          Water Temp   0.235   promotes  
+  Air Temp Min  →          Water Temp   0.224   promotes  
+  Water Temp    ⊣          ODO (%Sat)   -0.221  suppresses
+  Air Temp Min  →          Spec. Cond.  0.215   promotes  
+  Spec. Cond.   →          ODO (%Sat)   0.201   promotes  
+  ODO (%Sat)    ⊣          Water Temp   -0.187  suppresses
+  ODO (%Sat)    →          Spec. Cond.  0.187   promotes  
+  Spec. Cond.   →          ODO (mg/L)   0.176   promotes  
+  Air Temp Min  →          Salinity     0.169   promotes  
+  ODO (mg/L)    →          Spec. Cond.  0.164   promotes  
+  Water Temp    ⊣          ODO (mg/L)   -0.148  suppresses
+  Air Temp Max  →          ODO (%Sat)   0.145   promotes  
+  Pressure      ⊣          Turbidity    -0.143  suppresses
+
+------------------------------------------------------------
+Figure 10 — FCM scenario projections (summary)
+------------------------------------------------------------
+Scenarios applied to Physical FCM; values are normalised activations [0,1].
+Shown: direction of change in each variable after 60-day simulation.
+
+  Concept      Baseline  Cold & Dry  Heat Wave  Heavy Rain
+  -----------  --------  ----------  ---------  ----------
+  Depth        0.214     0.210       0.217      0.212     
+  ODO (%Sat)   0.416     0.395       0.427      0.420     
+  ODO (mg/L)   0.411     0.392       0.422      0.415     
+  Pressure     0.189     0.187       0.190      0.186     
+  Salinity     0.288     0.275       0.296      0.284     
+  Spec. Cond.  0.290     0.274       0.299      0.288     
+  Turbidity    0.598     0.589       0.603      0.602     
+  Water Temp   0.370     0.343       0.386      0.369     
+
+------------------------------------------------------------
+Figure 11 — FCM influence ranking
+------------------------------------------------------------
+Net influence = sum of outgoing |weights| - sum of incoming |weights|.
+Positive = net driver; Negative = net receiver.
+
+  Concept               Outgoing  Incoming  Net (Driver+)
+  --------------------  --------  --------  -------------
+  Air Temp Min          1.003     0.000     1.003        
+  Air Temp Max          0.562     0.000     0.562        
+  Net Water (Rain−PET)  0.559     0.000     0.559        
+  Depth                 1.028     1.065     -0.037       
+  Pressure              1.158     1.216     -0.058       
+  Water Temp            0.768     1.064     -0.295       
+  Turbidity             0.311     0.624     -0.313       
+  ODO (mg/L)            0.744     1.069     -0.325       
+  ODO (%Sat)            0.848     1.210     -0.362       
+  Salinity              0.760     1.123     -0.363       
+  Spec. Cond.           1.077     1.447     -0.370       
+
+========================================================================
+SECTION 3 — NUTRIENT FCM  (FIGURES 12–15)
+========================================================================
+Monthly resolution, 2021-2026. 16 concepts = 3 forcing + 8 sensor
++ 5 nutrient extras (pH, Chl-a, Secchi, NO2+NO3, DIN).
+Optimal lag = 1 month (selected by held-out validation MSE).
+
+------------------------------------------------------------
+Figures 12 & 13 — Nutrient FCM weight matrix and causal graph
+------------------------------------------------------------
+Source: analysis/fcm_weights_nutrient.csv
+Full 16×16 weight matrix (rows=source, cols=target):
+
+                        Net Water (Rain−PET)  Air Temp Min          Air Temp Max          Water Temp            Salinity              ODO (mg/L)            Depth                 Pressure              ODO (%Sat)            Spec. Cond.           Turbidity             pH                    Chlorophyll-a         Secchi Depth          NO₂+NO₃               DIN                 
+  --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Net Water (Rain−PET)  0.000                 0.000                 0.000                 0.202                 -0.090                -0.021                0.000                 0.000                 -0.011                -0.024                0.000                 -0.050                0.395                 -0.035                0.390                 0.146               
+  Air Temp Min          0.000                 0.000                 0.000                 0.184                 0.081                 0.145                 0.000                 0.000                 0.159                 0.017                 0.000                 0.045                 0.089                 -0.057                0.188                 0.117               
+  Air Temp Max          0.000                 0.000                 0.000                 0.299                 0.154                 0.153                 0.000                 0.000                 0.054                 0.175                 0.000                 0.033                 0.177                 0.178                 0.026                 0.092               
+  Water Temp            0.000                 0.000                 0.000                 0.921                 -0.048                0.063                 0.000                 0.000                 -0.048                -0.076                0.000                 0.052                 0.347                 0.352                 0.293                 0.404               
+  Salinity              0.000                 0.000                 0.000                 -0.032                0.972                 0.292                 0.000                 0.000                 -0.012                1.000                 0.000                 0.112                 0.092                 0.010                 0.040                 0.011               
+  ODO (mg/L)            0.000                 0.000                 0.000                 0.339                 0.093                 0.033                 0.000                 0.000                 -0.174                0.079                 0.000                 0.213                 -0.019                0.135                 0.064                 0.087               
+  Depth                 0.000                 0.000                 0.000                 0.187                 -0.092                -0.251                0.000                 0.000                 -0.075                -0.096                0.000                 0.348                 0.107                 0.064                 -0.001                0.004               
+  Pressure              0.000                 0.000                 0.000                 0.312                 -0.042                -0.139                0.000                 0.000                 -0.069                -0.037                0.000                 0.433                 0.120                 0.091                 0.018                 0.026               
+  ODO (%Sat)            0.000                 0.000                 0.000                 -0.020                -0.149                0.327                 0.000                 0.000                 0.417                 -0.133                0.000                 0.324                 0.252                 0.201                 0.164                 0.224               
+  Spec. Cond.           0.000                 0.000                 0.000                 -0.051                0.870                 0.279                 0.000                 0.000                 0.006                 0.814                 0.000                 0.099                 0.125                 0.073                 0.165                 0.247               
+  Turbidity             0.000                 0.000                 0.000                 -0.134                -0.110                0.322                 0.000                 0.000                 0.417                 -0.081                0.000                 0.173                 0.062                 0.041                 -0.017                -0.012              
+  pH                    0.000                 0.000                 0.000                 0.262                 0.174                 0.312                 0.000                 0.000                 0.212                 0.242                 0.000                 0.853                 0.393                 0.147                 -0.095                -0.127              
+  Chlorophyll-a         0.000                 0.000                 0.000                 0.044                 -0.060                0.098                 0.000                 0.000                 0.055                 -0.042                0.000                 0.127                 0.232                 0.422                 -0.073                -0.036              
+  Secchi Depth          0.000                 0.000                 0.000                 0.217                 0.178                 0.093                 0.000                 0.000                 0.075                 0.054                 0.000                 -0.020                -0.180                0.443                 -0.052                0.076               
+  NO₂+NO₃               0.000                 0.000                 0.000                 -0.222                0.101                 -0.007                0.000                 0.000                 -0.001                0.188                 0.000                 0.181                 0.368                 -0.272                0.449                 0.351               
+  DIN                   0.000                 0.000                 0.000                 -0.323                0.223                 0.093                 0.000                 0.000                 0.062                 0.257                 0.000                 -0.059                -0.067                -0.290                0.165                 0.583               
+
+Top causal edges (|weight| > 0.05):
+
+  Source                Direction  Target         Weight  Effect    
+  --------------------  ---------  -------------  ------  ----------
+  Salinity              →          Spec. Cond.    1.000   promotes  
+  Spec. Cond.           →          Salinity       0.871   promotes  
+  Pressure              →          pH             0.433   promotes  
+  Chlorophyll-a         →          Secchi Depth   0.422   promotes  
+  Turbidity             →          ODO (%Sat)     0.417   promotes  
+  Water Temp            →          DIN            0.404   promotes  
+  Net Water (Rain−PET)  →          Chlorophyll-a  0.395   promotes  
+  pH                    →          Chlorophyll-a  0.393   promotes  
+  Net Water (Rain−PET)  →          NO₂+NO₃        0.390   promotes  
+  NO₂+NO₃               →          Chlorophyll-a  0.368   promotes  
+  Water Temp            →          Secchi Depth   0.352   promotes  
+  NO₂+NO₃               →          DIN            0.351   promotes  
+  Depth                 →          pH             0.348   promotes  
+  Water Temp            →          Chlorophyll-a  0.347   promotes  
+  ODO (mg/L)            →          Water Temp     0.339   promotes  
+  ODO (%Sat)            →          ODO (mg/L)     0.327   promotes  
+  ODO (%Sat)            →          pH             0.324   promotes  
+  DIN                   ⊣          Water Temp     -0.323  suppresses
+  Turbidity             →          ODO (mg/L)     0.322   promotes  
+  Pressure              →          Water Temp     0.312   promotes  
+  pH                    →          ODO (mg/L)     0.312   promotes  
+  Air Temp Max          →          Water Temp     0.299   promotes  
+  Water Temp            →          NO₂+NO₃        0.293   promotes  
+  Salinity              →          ODO (mg/L)     0.292   promotes  
+  DIN                   ⊣          Secchi Depth   -0.290  suppresses
+
+------------------------------------------------------------
+Figures 14–15 — Scenario projections and influence ranking (Nutrient FCM)
+------------------------------------------------------------
+
+Scenario change vs baseline (normalised [0,1] space):
+
+  Concept        Baseline  Cold & Dry  Heat Wave  Heavy Rain
+  -------------  --------  ----------  ---------  ----------
+  Chlorophyll-a  0.335     0.302       0.348      0.355     
+  DIN            0.439     0.413       0.450      0.448     
+  Depth          -0.105    -0.105      -0.105     -0.105    
+  NO₂+NO₃        0.464     0.425       0.478      0.492     
+  ODO (%Sat)     0.520     0.497       0.534      0.520     
+  ODO (mg/L)     0.456     0.431       0.470      0.455     
+  Pressure       -0.165    -0.165      -0.165     -0.165    
+  Salinity       0.263     0.251       0.271      0.260     
+  Secchi Depth   0.409     0.396       0.419      0.407     
+  Spec. Cond.    0.264     0.253       0.271      0.264     
+  Turbidity      0.261     0.261       0.261      0.261     
+  Water Temp     0.242     0.194       0.265      0.252     
+  pH             0.235     0.229       0.239      0.234     
+
+Nutrient FCM influence ranking:
+
+  Concept               Outgoing  Incoming  Net (Driver+)
+  --------------------  --------  --------  -------------
+  Turbidity             1.370     0.000     1.370        
+  Net Water (Rain−PET)  1.364     0.000     1.364        
+  Air Temp Max          1.343     0.000     1.343        
+  Pressure              1.288     0.000     1.288        
+  Depth                 1.225     0.000     1.225        
+  Air Temp Min          1.082     0.000     1.082        
+  ODO (%Sat)            1.793     1.432     0.361        
+  NO₂+NO₃               1.691     1.749     -0.058       
+  pH                    1.965     2.269     -0.305       
+  DIN                   1.539     1.963     -0.425       
+  Spec. Cond.           1.916     2.502     -0.586       
+  Salinity              1.600     2.466     -0.865       
+  Water Temp            1.683     2.827     -1.143       
+  ODO (mg/L)            1.202     2.596     -1.394       
+  Secchi Depth          0.947     2.368     -1.421       
+  Chlorophyll-a         0.958     2.795     -1.837       
+
+========================================================================
+SECTION 4 — DIE-OFF EVENT ANALYSIS  (FIGURES 16–20)
+========================================================================
+
+------------------------------------------------------------
+Figure 16 — Anomaly Z-scores at die-off events
+------------------------------------------------------------
+Source: analysis/dieoff_anomalies.csv
+
+  period   temp    sal     do_per  do_mgL  ph      chl_exo_ugL  secchi  no2no3  nh4     po4     din   
+  -------  ------  ------  ------  ------  ------  -----------  ------  ------  ------  ------  ------
+  2021-09  0.971   -0.716  -0.724  -0.909  -0.852  -0.198       -0.065  0.114   0.104   -0.134  0.130 
+  2021-10  0.392   -0.298  0.619   0.963   -0.600  0.027        -0.621  0.271   -0.075  -0.208  0.022 
+  2021-11  -0.708  nan     0.019   0.131   0.621   0.067        -0.461  0.096   -0.001  -0.166  0.030 
+  2021-12  -0.535  nan     -0.095  -0.277  0.186   -0.791       1.246   -0.388  -0.034  0.336   -0.158
+  2022-08  1.194   0.271   0.481   0.172   -0.325  -0.405       0.069   -0.011  -0.009  -0.114  -0.012
+  2022-09  1.112   0.054   -0.343  -0.796  -0.047  -0.321       0.116   -0.118  0.236   0.078   0.169 
+  2022-10  -0.076  0.100   -0.930  -0.863  0.128   0.168        -0.397  0.073   0.321   -0.003  0.307 
+  2022-12  -0.917  0.492   -0.662  -0.352  0.088   -0.088       -0.055  -0.104  -0.104  -0.092  -0.126
+  2023-02  -0.607  -0.439  0.565   0.925   0.666   -0.119       0.111   -0.241  0.126   -0.018  0.032 
+  2023-04  -0.422  -0.162  0.164   0.365   0.571   0.561        -0.160  0.208   0.180   -0.114  0.228 
+
+------------------------------------------------------------
+Figure 17 — Site values at event months (spatial map underlying data)
+------------------------------------------------------------
+
+  Sept 2021 — all sampled sites:
+
+  site_name  site_type           lat_dec  lon_dec  do_per  do_mgL  nh4    din    sal  
+  ---------  ------------------  -------  -------  ------  ------  -----  -----  -----
+  LR01       Little River Canal  25.84    -80.17   79.50   5.12    12.59  21.91  27.04
+  BB14       Biscayne Bay        25.83    -80.16   84.70   5.46    2.48   3.55   27.81
+  BB17       Biscayne Bay        25.80    -80.17   86.50   5.51    2.20   2.85   29.59
+  BB18       Biscayne Bay        25.79    -80.16   88.60   5.64    1.88   2.40   29.86
+  MR01       Miami Canal         25.77    -80.19   82.90   5.32    7.21   10.75  29.68
+  BB24       Biscayne Bay        25.77    -80.14   92.40   5.81    0.74   0.97   32.70
+  BB25       Biscayne Bay        25.76    -80.15   93.30   5.83    1.34   4.74   35.78
+  GOC-001    Inlet               25.76    -80.13   92.80   5.87    0.70   1.31   30.19
+  BB22       Biscayne Bay        25.76    -80.17   93.00   5.79    1.62   2.09   34.48
+  GOC-015    Outfall             25.75    -80.09   68.10   4.07    0.32   1.57   24.60
+  GOC-014    Outfall             25.74    -80.09   101.00  6.57    18.37  19.11  28.99
+  GOC-006    Reef                25.73    -80.10   103.40  6.69    0.46   0.49   28.56
+  GOC-011    Reef                25.72    -80.10   102.10  6.69    0.42   0.45   27.77
+
+  Oct 2022 — all sampled sites:
+
+  site_name  site_type           lat_dec  lon_dec  do_per  do_mgL  nh4    din    sal  
+  ---------  ------------------  -------  -------  ------  ------  -----  -----  -----
+  LR01       Little River Canal  25.84    -80.17   8.80    0.60    18.90  22.23  28.27
+  BB14       Biscayne Bay        25.83    -80.16   36.30   2.61    13.90  16.30  26.31
+  BB17       Biscayne Bay        25.80    -80.17   73.50   5.10    4.24   5.49   30.09
+  BB18       Biscayne Bay        25.79    -80.16   63.60   4.35    3.19   5.20   30.70
+  MR01       Miami Canal         25.77    -80.19   67.50   4.53    12.03  21.44  28.98
+  BB24       Biscayne Bay        25.77    -80.14   80.40   5.39    2.91   4.67   33.92
+  GOC-004    Inlet               25.77    -80.13   95.50   6.21    0.35   0.64   37.11
+  GOC-002    Inlet               25.76    -80.13   78.60   5.25    2.41   4.13   32.77
+  GOC-003    Inlet               25.76    -80.12   81.20   5.42    2.39   4.10   33.37
+  BB25       Biscayne Bay        25.76    -80.15   85.20   5.58    1.99   2.91   36.29
+  GOC-001    Inlet               25.76    -80.13   84.20   5.55    1.15   2.67   35.13
+  BB22       Biscayne Bay        25.76    -80.17   69.60   4.70    2.76   4.62   32.90
+  BB26       Biscayne Bay        25.75    -80.19   71.80   4.85    3.96   6.21   33.28
+  GOC-015    Outfall             25.75    -80.09   97.60   6.23    15.31  15.85  36.31
+  GOC-014    Outfall             25.74    -80.09   95.60   6.10    38.79  40.59  35.94
+  GOC-013    Outfall             25.74    -80.08   100.00  6.35    7.83   8.09   36.88
+  GOC-012    Outfall             25.74    -80.09   98.70   6.27    10.67  11.15  36.84
+  GOC-006    Reef                25.73    -80.10   92.00   5.97    1.02   1.82   36.06
+  BB28       Biscayne Bay        25.73    -80.16   79.90   5.34    2.55   4.81   34.01
+  GOC-011    Reef                25.72    -80.10   97.50   6.20    1.79   2.27   37.11
+
+------------------------------------------------------------
+Figure 18 — Pre-event lead-up (3-month window, key sites)
+------------------------------------------------------------
+Monthly grab-sample medians at canal and bay sites, 3 months before event.
+
+
+  Sept 2021 lead-up:
+
+  Month    Site     do_per  nh4    din    sal    temp 
+  -------  -------  ------  -----  -----  -----  -----
+  2021-09  BB14     84.70   2.48   3.55   27.81  30.22
+  2021-09  BB25     93.30   1.34   4.74   35.78  30.34
+  2021-09  GOC-014  101.00  18.37  19.11  28.99  29.99
+  2021-09  LR01     79.50   12.59  21.91  27.04  28.74
+  2021-09  MR01     82.90   7.21   10.75  29.68  30.38
+
+  Oct 2022 lead-up:
+
+  Month    Site     do_per  nh4    din    sal    temp 
+  -------  -------  ------  -----  -----  -----  -----
+  2022-08  BB14     87.80   1.60   2.04   32.84  31.04
+  2022-08  BB14     123.10  1.10   1.21   nan    31.29
+  2022-08  BB25     140.50  0.30   0.64   36.68  30.84
+  2022-08  BB25     106.30  0.77   1.64   nan    31.22
+  2022-08  GOC-014  95.00   23.94  24.53  36.49  29.99
+  2022-08  LR01     87.50   9.04   16.92  18.75  31.07
+  2022-08  LR01     98.70   7.03   15.08  nan    31.08
+  2022-08  MR01     102.20  5.00   10.44  22.80  30.76
+  2022-08  MR01     81.60   4.01   8.01   nan    31.22
+  2022-09  BB14     100.10  0.83   0.90   28.78  30.62
+  2022-09  BB25     92.10   0.24   0.66   35.06  30.62
+  2022-09  GOC-014  94.60   67.35  68.76  nan    29.57
+  2022-09  GOC-014  94.00   35.43  36.70  35.02  30.33
+  2022-09  LR01     74.70   9.06   16.82  25.47  30.79
+  2022-09  MR01     75.00   17.26  26.30  25.38  30.51
+  2022-10  BB14     36.30   13.90  16.30  26.31  24.26
+  2022-10  BB14     112.70  1.37   1.57   30.05  27.59
+  2022-10  BB25     85.20   1.99   2.91   36.29  26.58
+  2022-10  BB25     103.40  0.45   0.76   35.75  27.61
+  2022-10  GOC-014  95.60   38.79  40.59  35.94  28.18
+  2022-10  GOC-014  96.00   36.69  37.47  35.30  27.42
+  2022-10  LR01     8.80    18.90  22.23  28.27  26.33
+  2022-10  LR01     90.50   6.43   13.23  26.56  28.79
+  2022-10  MR01     67.50   12.03  21.44  28.98  27.61
+  2022-10  MR01     78.80   6.17   14.99  23.50  27.29
+
+========================================================================
+SECTION 5 — FCM VALIDATION  (FIGURES 21–24)
+========================================================================
+
+------------------------------------------------------------
+Figure 21 — One-step-ahead hindcast metrics
+------------------------------------------------------------
+R² measured on genuinely observed data points only (not NaN-filled).
+R² > 0.5 = FCM has real predictive skill; < 0 = worse than mean prediction.
+Source: analysis/fcm_hindcast_metrics.csv
+
+  concept        R2      RMSE   MAE    n 
+  -------------  ------  -----  -----  --
+  Salinity       0.196   0.290  0.203  54
+  Spec. Cond.    0.187   0.292  0.206  54
+  Depth          -0.126  0.267  0.212  18
+  Pressure       -0.319  0.306  0.265  18
+  Water Temp     -0.345  0.291  0.229  57
+  pH             -0.768  0.216  0.189  42
+  Chlorophyll-a  -0.953  0.339  0.286  42
+  Turbidity      -0.991  0.377  0.354  18
+  DIN            -1.091  0.411  0.357  42
+  ODO (mg/L)     -2.000  0.358  0.345  57
+  ODO (%Sat)     -2.000  0.454  0.450  57
+  Secchi Depth   -2.000  0.397  0.370  42
+  NO₂+NO₃        -2.000  0.434  0.400  42
+
+------------------------------------------------------------
+Figure 22 — Hindcast time-series (monthly observed vs predicted)
+------------------------------------------------------------
+Predicted values computed as: A_pred(t+1) = sigmoid(W^T * A_obs(t))
+then de-normalised. Table shows first/last 12 months of salinity
+(the only concept with positive R²) as representative example.
+
+  Month    Observed (norm)  Predicted (norm)
+  -------  ---------------  ----------------
+  2021-10  0.801            0.862           
+  2021-11  0.827            0.857           
+  2021-12  0.853            0.879           
+  2022-01  0.853            0.867           
+  2022-04  0.982            0.740           
+  2022-05  0.982            0.884           
+  2022-06  0.856            0.873           
+  2022-07  0.688            0.855           
+  2022-08  0.921            0.833           
+  2022-09  0.819            0.823           
+  2022-10  0.822            0.859           
+  2022-11  0.899            0.866           
+  2022-12  0.973            0.879           
+  2023-01  0.863            0.878           
+  2023-02  0.671            0.854           
+  2023-03  1.000            0.819           
+  2023-04  0.765            0.888           
+  2023-05  0.908            0.851           
+  2023-06  0.769            0.873           
+  2023-07  0.872            0.858           
+  2023-08  0.714            0.862           
+  2023-09  0.737            0.858           
+  2023-10  0.848            0.850           
+  2023-11  0.811            0.859           
+  2023-12  0.873            0.873           
+  2024-01  0.882            0.885           
+  2024-02  0.854            0.848           
+  2024-03  0.883            0.857           
+  2024-04  0.844            0.863           
+  2024-05  0.951            0.854           
+  2024-06  0.687            0.882           
+  2024-07  0.806            0.831           
+  2024-08  0.817            0.850           
+  2024-09  0.785            0.864           
+  2024-10  0.754            0.847           
+  2024-11  0.893            0.861           
+  2024-12  0.932            0.866           
+  2025-03  0.154            0.856           
+  2025-04  0.186            0.594           
+  2025-05  0.353            0.633           
+  2025-06  0.288            0.709           
+  2025-07  0.189            0.715           
+  2025-08  0.095            0.658           
+  2025-09  0.000            0.612           
+  2025-10  0.156            0.575           
+  2025-11  0.209            0.648           
+  2025-12  0.218            0.646           
+  2026-01  0.135            0.672           
+  2026-02  0.174            0.631           
+  2026-03  0.243            0.642           
+  2026-04  0.110            0.681           
+  2026-05  0.183            0.630           
+  2026-06  0.131            0.665           
+  2026-07  0.162            0.649           
+  2026-08  0.146            0.665           
+
+------------------------------------------------------------
+Figures 23-24 — Event backcasts (Sept 2021, Oct 2022)
+------------------------------------------------------------
+Qualitative summary: FCM seeded at event-month observed conditions,
+run forward 6 months. See visualizations/23 and 24 for plotted results.
+The FCM predicts moderate salinity/temperature changes but cannot
+capture the acute DO crash because DO has negative hindcast R².
+
+========================================================================
+SECTION 6 — GEOGRAPHIC MAPS: SENSOR STATIONS  (FIGURES 25–29)
+========================================================================
+
+------------------------------------------------------------
+Figure — Temperature (°C) seasonal medians (observed only)
+------------------------------------------------------------
+Rows = stations, columns = year+season combinations.
+Grey in the chart = NaN here.
+
+  station              2025 Aut(SON)  2025 Spr(MAM)  2025 Sum(JJA)  2026 Spr(MAM)  2026 Sum(JJA)  2026 Win(DJF)
+  -------------------  -------------  -------------  -------------  -------------  -------------  -------------
+  L0                   nan            27.42          30.46          nan            30.94          nan          
+  L1                   28.71          27.27          30.68          25.86          30.73          21.14        
+  L2                   27.74          26.69          30.62          25.52          30.87          23.24        
+  L6                   nan            30.80          31.10          23.27          nan            21.70        
+  L7                   25.74          nan            nan            nan            31.05          24.87        
+  biscayne_bay         nan            nan            nan            26.95          32.26          21.25        
+  consolidated_crest5  nan            nan            nan            nan            31.34          nan          
+
+------------------------------------------------------------
+Figure — Salinity (PPT) seasonal medians (observed only)
+------------------------------------------------------------
+Rows = stations, columns = year+season combinations.
+Grey in the chart = NaN here.
+
+  station              2025 Aut(SON)  2025 Spr(MAM)  2025 Sum(JJA)  2026 Spr(MAM)  2026 Sum(JJA)  2026 Win(DJF)
+  -------------------  -------------  -------------  -------------  -------------  -------------  -------------
+  L0                   nan            35.41          31.60          nan            33.75          nan          
+  L1                   0.36           0.50           0.29           0.61           0.33           0.44         
+  L2                   0.65           26.72          15.50          33.48          6.91           32.09        
+  L6                   nan            34.52          33.61          35.29          nan            32.77        
+  L7                   19.23          nan            nan            nan            15.89          12.63        
+  biscayne_bay         nan            nan            nan            32.63          10.12          34.45        
+  consolidated_crest5  nan            nan            nan            nan            21.59          nan          
+
+------------------------------------------------------------
+Figure — DO (mg/L) seasonal medians (observed only)
+------------------------------------------------------------
+Rows = stations, columns = year+season combinations.
+Grey in the chart = NaN here.
+
+  station              2025 Aut(SON)  2025 Spr(MAM)  2025 Sum(JJA)  2026 Spr(MAM)  2026 Sum(JJA)  2026 Win(DJF)
+  -------------------  -------------  -------------  -------------  -------------  -------------  -------------
+  L0                   nan            5.29           4.43           nan            5.94           nan          
+  L1                   1.74           6.50           4.25           4.49           3.91           5.91         
+  L2                   2.18           5.36           4.40           5.37           3.69           5.44         
+  L6                   nan            6.11           5.95           5.49           nan            0.95         
+  L7                   4.27           nan            nan            nan            4.69           3.22         
+  biscayne_bay         nan            nan            nan            5.95           4.44           6.96         
+  consolidated_crest5  nan            nan            nan            nan            2.74           nan          
+
+------------------------------------------------------------
+Figure — Turbidity (FNU) seasonal medians (observed only)
+------------------------------------------------------------
+Rows = stations, columns = year+season combinations.
+Grey in the chart = NaN here.
+
+  station              2025 Aut(SON)  2025 Spr(MAM)  2025 Sum(JJA)  2026 Sum(JJA)  2026 Win(DJF)
+  -------------------  -------------  -------------  -------------  -------------  -------------
+  L0                   nan            1.00           259.68         2.10           nan          
+  L1                   0.92           -0.69          0.24           -0.39          nan          
+  L2                   18.75          6.91           3.93           6.29           27.34        
+  L6                   nan            28.28          16.57          nan            nan          
+  L7                   13.08          nan            nan            5.76           19.52        
+  biscayne_bay         nan            nan            nan            6.01           nan          
+  consolidated_crest5  nan            nan            nan            13.24          nan          
+
+========================================================================
+SECTION 7 — EXTENDED MAPS 2021–2026  (FIGURES 30–36)
+========================================================================
+
+------------------------------------------------------------
+Figures 30–32 — Combined sensor + grab seasonal medians
+------------------------------------------------------------
+Sensor stations (2025-2026) and grab-sample sites (2021-2024) combined.
+
+Figure 30 — Water Temperature at open-bay GRAB sites (°C)
+
+  site_name  2021 Aut(SON)  2022 Aut(SON)  2022 Spr(MAM)  2022 Sum(JJA)  2022 Win(DJF)  2023 Aut(SON)  2023 Spr(MAM)  2023 Sum(JJA)  2023 Win(DJF)  2024 Aut(SON)  2024 Spr(MAM)  2024 Sum(JJA)  2024 Win(DJF)  2025 Win(DJF)
+  ---------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------
+  BB14       28.4           27.6           27.6           31.1           22.0           26.0           25.1           29.6           23.5           24.5           24.6           31.1           20.6           25.1         
+  BB17       28.2           27.6           27.3           30.9           22.9           26.3           25.9           30.1           23.6           24.8           25.0           30.5           21.5           24.8         
+  BB18       28.2           27.5           27.2           31.0           22.8           26.4           26.3           30.3           23.9           25.1           25.1           30.2           21.5           24.6         
+  BB22       28.5           27.4           27.2           30.9           23.5           27.2           26.0           30.5           24.2           25.5           25.4           30.5           22.4           25.4         
+  BB24       28.4           27.5           26.7           30.6           23.5           27.4           25.9           30.5           24.2           25.7           25.1           30.4           22.4           25.3         
+  BB25       28.7           27.6           26.8           30.7           23.3           27.1           25.8           30.2           24.9           25.5           25.2           30.5           22.6           25.3         
+  BB26       27.1           27.7           27.8           31.1           22.8           26.8           26.2           30.4           23.9           25.2           25.3           30.3           22.1           25.1         
+  BB28       27.2           27.7           27.5           30.9           22.8           27.1           25.9           30.1           24.1           25.5           25.2           30.4           22.2           25.3         
+
+Figure 31 — Salinity at ALL grab sites (PPT)
+
+  site_name  2021 Aut(SON)  2022 Aut(SON)  2022 Spr(MAM)  2022 Sum(JJA)  2023 Aut(SON)  2023 Spr(MAM)  2023 Sum(JJA)  2023 Win(DJF)
+  ---------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------
+  BB14       28.3           28.8           34.9           27.7           27.3           31.3           27.8           31.0         
+  BB17       30.2           31.7           35.8           30.4           30.4           33.9           30.6           33.4         
+  BB18       30.4           32.1           36.1           31.5           31.7           34.0           31.1           33.5         
+  BB22       34.2           32.9           36.2           35.6           34.5           35.0           32.6           34.0         
+  BB24       33.8           35.1           37.0           35.1           35.1           37.0           34.6           34.7         
+  BB25       35.2           35.8           36.8           36.2           35.3           36.8           34.4           34.7         
+  BB26       31.8           33.3           35.8           32.2           32.1           34.5           31.5           32.6         
+  BB28       32.1           34.4           37.1           36.6           35.0           35.9           32.8           33.4         
+  GOC-001    30.2           35.2           36.9           35.3           34.8           34.3           34.0           35.0         
+  GOC-002    nan            34.5           37.1           36.0           35.5           33.7           34.2           35.3         
+  GOC-003    nan            34.6           36.9           36.2           35.5           33.8           35.0           35.6         
+  GOC-004    nan            35.8           37.0           35.4           35.6           33.8           35.5           35.3         
+  GOC-006    28.6           36.1           37.4           36.9           35.6           34.6           36.7           36.3         
+  GOC-011    27.8           36.2           37.4           36.4           36.0           35.4           36.8           36.3         
+  GOC-012    nan            36.0           37.2           36.4           35.7           35.4           37.6           36.5         
+  GOC-013    nan            36.5           37.1           36.4           35.8           35.9           37.5           36.6         
+  GOC-014    29.0           35.3           36.8           35.6           35.2           35.3           37.1           35.8         
+  GOC-015    24.6           36.0           36.9           35.6           35.6           34.8           37.2           35.5         
+  LR01       28.5           26.6           32.7           25.6           24.5           20.7           25.1           27.0         
+  MR01       29.8           25.4           28.6           22.8           23.1           32.4           23.9           25.6         
+  (truncated to first 8 year+season columns; full data in CSV)
+
+Figure 32 — DO mg/L at ALL grab sites
+
+  site_name  2021 Aut(SON)  2022 Aut(SON)  2022 Spr(MAM)  2022 Sum(JJA)  2022 Win(DJF)  2023 Aut(SON)  2023 Spr(MAM)  2023 Sum(JJA)
+  ---------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------
+  BB14       6.5            6.4            8.2            6.5            8.1            6.9            6.7            7.1          
+  BB17       6.7            5.6            6.5            6.2            7.2            6.6            6.6            6.3          
+  BB18       6.2            5.3            6.3            6.0            6.8            6.2            6.0            6.6          
+  BB22       6.6            6.0            6.8            6.2            7.6            6.5            7.0            6.2          
+  BB24       6.2            5.8            6.4            6.2            6.8            6.4            6.7            6.2          
+  BB25       6.3            5.7            6.7            6.4            6.9            6.5            6.6            6.2          
+  BB26       6.8            5.7            7.1            7.0            7.3            6.7            6.6            6.3          
+  BB28       6.8            6.0            7.1            6.6            7.6            6.8            6.8            6.2          
+  GOC-001    5.9            5.7            6.2            5.6            6.3            6.3            6.9            6.1          
+  GOC-002    nan            5.6            6.2            4.5            6.2            6.1            6.9            6.1          
+  GOC-003    nan            5.8            6.3            4.6            6.3            6.4            6.8            6.3          
+  GOC-004    nan            6.1            6.3            6.0            6.6            6.4            6.9            6.4          
+  GOC-006    6.7            6.0            6.4            6.2            6.3            6.2            6.9            6.3          
+  GOC-011    6.7            6.1            6.4            6.0            6.3            6.2            6.9            6.3          
+  GOC-012    nan            6.2            6.4            6.1            6.3            6.2            6.6            6.2          
+  GOC-013    nan            6.2            6.3            6.2            6.4            6.3            6.7            6.3          
+  GOC-014    6.6            6.0            6.2            6.0            6.3            6.1            6.6            6.2          
+  GOC-015    4.1            6.2            6.3            6.0            6.3            6.2            6.8            6.2          
+  LR01       5.2            4.9            6.5            5.8            6.5            5.9            6.6            6.2          
+  MR01       6.1            4.9            6.0            5.5            6.4            5.6            5.9            5.5          
+  (truncated to first 8 year+season columns)
+
+------------------------------------------------------------
+Figures 33–35 — Nutrient seasonal medians (grab sites, 2021-2024)
+------------------------------------------------------------
+
+Figure — pH
+
+  site_name  2021 Aut(SON)  2022 Aut(SON)  2022 Spr(MAM)  2022 Sum(JJA)  2022 Win(DJF)  2023 Aut(SON)  2023 Spr(MAM)  2023 Sum(JJA)
+  ---------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------
+  BB14       8.11           8.04           8.13           8.00           8.02           8.05           8.30           8.38         
+  BB17       8.06           8.08           8.01           8.08           7.95           8.03           8.30           8.27         
+  BB18       7.83           8.09           7.99           8.07           7.94           8.05           8.23           8.29         
+  BB22       8.09           8.14           8.08           8.09           8.04           8.14           8.36           8.26         
+  BB24       8.03           8.23           8.18           8.09           7.99           8.18           8.34           8.35         
+  BB25       8.04           8.23           8.20           8.14           8.01           8.16           8.34           8.31         
+  BB26       8.20           8.12           8.19           8.14           7.92           8.08           8.36           8.24         
+  BB28       8.22           8.18           8.18           8.12           8.04           8.16           8.34           8.35         
+  GOC-001    7.99           8.26           8.11           8.12           8.13           8.10           8.34           8.31         
+  GOC-002    nan            8.05           8.06           7.99           8.12           8.14           8.33           8.30         
+  GOC-003    nan            8.21           8.07           8.04           8.18           8.15           8.35           8.30         
+  GOC-004    nan            8.22           8.13           8.15           8.05           8.19           8.26           8.36         
+  GOC-006    8.12           8.29           8.10           8.16           8.21           8.21           8.31           8.37         
+  GOC-011    8.20           8.30           8.11           8.12           8.24           8.21           8.33           8.37         
+  GOC-012    nan            8.29           8.19           8.10           8.23           8.18           8.35           8.36         
+  GOC-013    nan            8.19           8.06           8.15           8.29           8.18           8.37           8.35         
+  GOC-014    8.00           8.17           8.01           8.07           8.14           8.15           8.32           8.34         
+  GOC-015    nan            8.24           8.08           8.12           8.25           8.16           8.33           8.32         
+  LR01       7.57           7.86           8.01           7.78           7.65           7.88           7.84           7.92         
+  MR01       7.96           7.99           7.98           7.84           7.92           7.87           8.13           7.97         
+  (truncated to first 8 year+season columns)
+
+Figure — Chl-a (µg/L)
+
+  site_name  2021 Aut(SON)  2022 Aut(SON)  2022 Spr(MAM)  2022 Sum(JJA)  2022 Win(DJF)  2023 Aut(SON)  2023 Spr(MAM)  2023 Sum(JJA)
+  ---------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------
+  BB14       1.27           1.07           0.33           0.96           0.23           1.46           0.73           1.19         
+  BB17       1.10           1.35           1.03           0.75           0.59           1.68           0.96           1.92         
+  BB18       0.98           1.15           1.36           0.89           0.76           1.78           0.90           1.92         
+  BB22       0.58           0.86           0.37           0.56           0.39           1.09           0.67           0.95         
+  BB24       0.42           0.84           0.13           0.34           0.51           0.69           0.25           0.69         
+  BB25       0.46           0.62           0.05           0.55           0.53           0.64           0.49           0.73         
+  BB26       1.25           1.37           0.54           0.69           0.66           1.58           0.42           1.35         
+  BB28       0.98           0.75           0.10           0.53           0.53           0.89           0.33           0.64         
+  GOC-001    0.22           0.52           0.04           0.20           0.45           0.93           0.50           0.80         
+  GOC-002    nan            0.94           0.12           0.38           0.39           0.83           0.27           0.46         
+  GOC-003    nan            0.81           0.27           0.18           0.39           0.98           0.61           0.71         
+  GOC-004    nan            0.49           0.21           0.15           0.65           1.31           0.36           0.77         
+  GOC-006    0.00           0.60           0.10           0.07           -0.07          0.34           1.51           0.31         
+  GOC-011    0.01           0.59           0.06           0.10           -0.04          0.69           1.21           0.28         
+  GOC-012    nan            0.51           0.05           0.15           -0.11          0.39           0.28           0.21         
+  GOC-013    nan            0.56           0.07           0.19           0.05           0.28           0.11           0.24         
+  GOC-014    0.16           1.08           0.07           0.34           -0.01          0.38           0.57           0.25         
+  GOC-015    1.99           0.57           0.05           0.18           0.15           0.33           0.43           0.37         
+  LR01       1.98           2.64           2.13           2.24           1.22           2.98           1.89           4.21         
+  MR01       1.37           1.76           5.30           2.23           2.66           3.00           1.59           2.04         
+  (truncated to first 8 year+season columns)
+
+Figure — DIN (µmol/L)
+
+  site_name  2021 Aut(SON)  2022 Aut(SON)  2022 Spr(MAM)  2022 Sum(JJA)  2022 Win(DJF)  2023 Aut(SON)  2023 Spr(MAM)  2023 Sum(JJA)
+  ---------  -------------  -------------  -------------  -------------  -------------  -------------  -------------  -------------
+  BB14       3.55           1.57           0.35           1.37           1.76           1.12           0.93           1.01         
+  BB17       3.09           2.72           0.83           1.35           1.44           2.11           1.31           1.55         
+  BB18       2.40           1.86           0.65           1.33           4.29           1.82           1.24           1.62         
+  BB22       2.12           2.50           0.43           1.30           3.70           1.68           1.55           2.12         
+  BB24       1.81           0.90           0.39           0.86           2.23           1.29           0.92           2.53         
+  BB25       2.95           0.76           0.35           1.12           1.41           1.90           0.73           3.36         
+  BB26       4.85           2.22           0.67           1.82           0.59           2.52           1.03           1.73         
+  BB28       2.10           0.58           0.23           0.54           0.53           1.84           1.02           1.59         
+  GOC-001    1.31           1.53           0.65           1.06           1.41           1.49           0.84           1.69         
+  GOC-002    nan            2.21           0.59           1.40           1.31           1.42           0.76           2.64         
+  GOC-003    nan            2.04           0.92           1.33           1.12           3.25           0.94           0.90         
+  GOC-004    nan            0.85           0.42           0.29           4.86           0.84           0.65           1.18         
+  GOC-006    0.49           1.23           0.15           0.65           1.05           2.49           0.51           0.85         
+  GOC-011    0.45           0.59           0.21           0.26           1.04           2.89           0.80           0.67         
+  GOC-012    nan            1.20           0.36           4.43           4.48           5.38           0.28           0.45         
+  GOC-013    nan            0.85           0.56           15.59          3.04           1.24           0.59           0.33         
+  GOC-014    19.11          39.03          39.34          29.73          23.62          34.15          1.11           0.75         
+  GOC-015    1.57           1.12           7.92           1.59           7.73           9.01           9.90           9.97         
+  LR01       21.25          16.82          6.61           16.00          16.68          11.48          13.21          18.27        
+  MR01       10.75          21.44          3.04           9.38           6.58           16.50          2.83           16.07        
+  (truncated to first 8 year+season columns)
+
+------------------------------------------------------------
+Figure 36 — Canal stress: annual NH4 and DO% medians by site
+------------------------------------------------------------
+Source: grab sample data, all surface samples.
+
+  site_name  site_type           Year  NH4 (µmol/L)  DO (%Sat)
+  ---------  ------------------  ----  ------------  ---------
+  GOC-014    Outfall             2021  20.50         99.45    
+  LR01       Little River Canal  2021  11.61         84.60    
+  MR01       Miami Canal         2021  7.21          90.30    
+  BB26       Biscayne Bay        2021  3.01          104.15   
+  BB14       Biscayne Bay        2021  2.48          94.70    
+  BB17       Biscayne Bay        2021  2.22          98.10    
+  BB18       Biscayne Bay        2021  1.85          94.80    
+  BB22       Biscayne Bay        2021  1.50          101.60   
+  BB25       Biscayne Bay        2021  1.50          97.00    
+  BB28       Biscayne Bay        2021  1.47          104.70   
+  BB24       Biscayne Bay        2021  1.27          96.20    
+  GOC-015    Outfall             2021  1.07          83.55    
+  GOC-002    Inlet               2021  1.00          92.40    
+  GOC-003    Inlet               2021  0.86          93.80    
+  GOC-004    Inlet               2021  0.77          95.10    
+  GOC-001    Inlet               2021  0.66          92.90    
+  GOC-006    Reef                2021  0.43          100.70   
+  GOC-012    Outfall             2021  0.36          98.80    
+  GOC-011    Reef                2021  0.29          99.95    
+  GOC-013    Outfall             2021  0.13          99.90    
+  GOC-014    Outfall             2022  33.58         96.30    
+  LR01       Little River Canal  2022  7.03          88.85    
+  MR01       Miami Canal         2022  4.01          84.80    
+  GOC-012    Outfall             2022  2.54          98.70    
+  GOC-015    Outfall             2022  1.12          99.00    
+  BB14       Biscayne Bay        2022  1.10          112.95   
+  BB26       Biscayne Bay        2022  0.97          105.90   
+  GOC-003    Inlet               2022  0.95          95.20    
+  BB18       Biscayne Bay        2022  0.85          96.00    
+  BB17       Biscayne Bay        2022  0.83          96.95    
+  GOC-002    Inlet               2022  0.71          93.80    
+  BB22       Biscayne Bay        2022  0.67          103.40   
+  GOC-013    Outfall             2022  0.64          100.00   
+  GOC-006    Reef                2022  0.58          98.80    
+  BB24       Biscayne Bay        2022  0.54          99.90    
+  GOC-001    Inlet               2022  0.51          95.10    
+  BB25       Biscayne Bay        2022  0.45          103.60   
+  GOC-004    Inlet               2022  0.40          98.70    
+  GOC-011    Reef                2022  0.34          100.00   
+  BB28       Biscayne Bay        2022  0.23          109.20   
+  GOC-014    Outfall             2023  22.60         99.45    
+  GOC-015    Outfall             2023  6.78          100.20   
+  LR01       Little River Canal  2023  4.82          91.10    
+  MR01       Miami Canal         2023  4.11          86.90    
+  BB26       Biscayne Bay        2023  0.99          98.90    
+  BB17       Biscayne Bay        2023  0.79          98.00    
+  BB14       Biscayne Bay        2023  0.78          103.20   
+  BB18       Biscayne Bay        2023  0.73          94.30    
+  BB25       Biscayne Bay        2023  0.71          98.20    
+  GOC-003    Inlet               2023  0.68          100.05   
+  BB22       Biscayne Bay        2023  0.64          100.10   
+  GOC-002    Inlet               2023  0.60          97.10    
+  GOC-001    Inlet               2023  0.59          98.00    
+  BB24       Biscayne Bay        2023  0.58          99.00    
+  GOC-006    Reef                2023  0.56          100.85   
+  GOC-011    Reef                2023  0.56          101.25   
+  BB28       Biscayne Bay        2023  0.53          103.30   
+  GOC-012    Outfall             2023  0.50          100.60   
+  GOC-004    Inlet               2023  0.47          99.55    
+  GOC-013    Outfall             2023  0.40          100.95   
+  GOC-014    Outfall             2024  17.75         98.75    
+  MR01       Miami Canal         2024  4.36          79.75    
+  LR01       Little River Canal  2024  4.34          82.90    
+  GOC-015    Outfall             2024  1.56          99.10    
+  BB17       Biscayne Bay        2024  0.82          96.60    
+  BB26       Biscayne Bay        2024  0.81          100.65   
+  GOC-002    Inlet               2024  0.76          97.45    
+  BB14       Biscayne Bay        2024  0.70          100.25   
+  BB25       Biscayne Bay        2024  0.63          99.95    
+  BB18       Biscayne Bay        2024  0.57          92.45    
+  BB22       Biscayne Bay        2024  0.54          102.35   
+  BB28       Biscayne Bay        2024  0.52          101.15   
+  GOC-013    Outfall             2024  0.52          99.60    
+  GOC-006    Reef                2024  0.46          99.70    
+  BB24       Biscayne Bay        2024  0.45          98.00    
+  GOC-004    Inlet               2024  0.44          98.85    
+  GOC-012    Outfall             2024  0.44          99.30    
+  GOC-001    Inlet               2024  0.42          98.00    
+  GOC-011    Reef                2024  0.42          98.55    
+  GOC-003    Inlet               2024  0.24          99.40    

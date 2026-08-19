@@ -384,6 +384,50 @@ def build_forcing_for_index(time_index: pd.DatetimeIndex):
     temp_max = _build_forcing_array(weather, "temp_max", time_index)
     return rain, temp_min, temp_max
 
+
+def _pet_hargreaves_daily(weather: pd.DataFrame,
+                          lat_deg: float = 25.8) -> pd.Series:
+    """Hargreaves-Samani PET (inches/day) for each date in weather index."""
+    phi  = np.radians(lat_deg)
+    doy  = weather.index.dayofyear.values.astype(np.float64)
+    dr   = 1 + 0.033 * np.cos(2 * np.pi / 365 * doy)
+    dec  = 0.409 * np.sin(2 * np.pi / 365 * doy - 1.39)
+    ws   = np.arccos(np.clip(-np.tan(phi) * np.tan(dec), -1, 1))
+    # Ra in MJ/m²/day → divide by 2.45 MJ/kg to get mm/day equivalent
+    Ra   = (24 * 60 / np.pi) * 0.0820 * dr * (
+               ws * np.sin(phi) * np.sin(dec)
+               + np.cos(phi) * np.cos(dec) * np.sin(ws)
+           ) / 2.45
+    T_mn = weather["temp_min"].values
+    T_mx = weather["temp_max"].values
+    T_rn = np.sqrt(np.maximum(T_mx - T_mn, 0.0))
+    pet_mm  = 0.0023 * Ra * ((T_mn + T_mx) / 2 + 17.8) * T_rn
+    pet_in  = pet_mm * 0.03937   # mm → inches
+    return pd.Series(pet_in, index=weather.index)
+
+
+def build_net_water_forcing(time_index: pd.DatetimeIndex):
+    """
+    Returns two (T,) float32 arrays aligned to time_index:
+        pet       — Hargreaves PET (inches/day)
+        net_water — rain_in minus PET; negative = moisture deficit
+    Used only by fcm.py (ST-GNN still receives raw rain).
+    """
+    weather  = load_weather()
+    pet_ser  = _pet_hargreaves_daily(weather)
+    # add PET column so _build_forcing_array can broadcast it
+    weather  = weather.copy()
+    weather["pet"]       = pet_ser
+    weather["net_water"] = weather["rain_in"] - weather["pet"]
+    # _build_forcing_array expects a tz-aware index; re-attach UTC if needed
+    if time_index.tzinfo is None:
+        idx = time_index.tz_localize("UTC")
+    else:
+        idx = time_index
+    pet       = _build_forcing_array(weather, "pet",       idx)
+    net_water = _build_forcing_array(weather, "net_water", idx)
+    return pet.astype(np.float32), net_water.astype(np.float32)
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------

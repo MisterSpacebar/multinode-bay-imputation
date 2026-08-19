@@ -56,7 +56,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from pathlib import Path
 
-from preprocess import build_dataset, ALL_FEATURES, load_historical_grab_samples
+from preprocess import (build_dataset, ALL_FEATURES, load_historical_grab_samples,
+                         build_net_water_forcing)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -70,7 +71,7 @@ VIZ_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 # Physical FCM — 11 concepts  (daily, 2025-2026)
 # ---------------------------------------------------------------------------
-FORCING_CONCEPTS  = ["rain", "temp_min", "temp_max"]
+FORCING_CONCEPTS  = ["net_water", "temp_min", "temp_max"]
 SENSOR_CONCEPTS   = list(ALL_FEATURES)                  # 8 features
 PHYS_CONCEPTS     = FORCING_CONCEPTS + SENSOR_CONCEPTS  # 11
 
@@ -89,6 +90,7 @@ N_NUTR           = len(NUTR_CONCEPTS)
 # Human-readable labels for both FCMs
 # ---------------------------------------------------------------------------
 CONCEPT_LABELS = {
+    "net_water":      "Net Water (Rain−PET)",
     "rain":           "Rainfall",
     "temp_min":       "Air Temp Min",
     "temp_max":       "Air Temp Max",
@@ -164,10 +166,11 @@ def load_physical_concept_timeseries() -> pd.DataFrame:
     t_idx = pd.DatetimeIndex(data["time_index"])
     if t_idx.tzinfo is not None:
         t_idx = t_idx.tz_localize(None)
+    _, net_w = build_net_water_forcing(t_idx)
     forcing_df = pd.DataFrame({
-        "rain":     data["rain"],
-        "temp_min": data["temp_min"],
-        "temp_max": data["temp_max"],
+        "net_water": net_w,
+        "temp_min":  data["temp_min"],
+        "temp_max":  data["temp_max"],
     }, index=t_idx)
 
     combined = pd.concat([forcing_df, sensor_df], axis=1)[PHYS_CONCEPTS]
@@ -190,8 +193,8 @@ def load_nutrient_concept_timeseries() -> pd.DataFrame:
     2021-09 → 2024-12: from grab-sample CSV (bi-monthly field surveys).
       Sensor features from BB surface samples (Biscayne Bay sites only).
       Nutrient features (pH, Chl-a, Secchi, NO2+NO3, DIN) from same source.
-      Forcing signals: NaN (no weather data for this period; excluded from
-      regression targets but carried as NaN).
+      Forcing signals: loaded from rainfall CSVs if 2021-2024 records exist
+      (fetched via fetch_historical_weather.py); NaN otherwise.
 
     2025-03 → 2026-07: from imputed continuous sensor data (resampled
       to monthly means) + weather forcing.
@@ -208,9 +211,23 @@ def load_nutrient_concept_timeseries() -> pd.DataFrame:
     grab_nutr_cols    = [c for c in NUTRIENT_EXTRA  if c in grab.columns]
     grab_keep         = grab_sensor_cols + grab_nutr_cols
     grab_monthly      = grab[grab_keep].copy()
-    # Add NaN forcing columns for 2021-2024
-    for fc in FORCING_CONCEPTS:
-        grab_monthly[fc] = np.nan
+    # Build monthly weather forcing for the grab-sample period (uses
+    # historical rainfall CSVs if available, otherwise stays NaN)
+    raw_idx = grab_monthly.index
+    if hasattr(raw_idx, "to_timestamp"):
+        grab_idx_dt = pd.DatetimeIndex(raw_idx.to_timestamp()).tz_localize("UTC")
+    else:
+        grab_idx_dt = pd.DatetimeIndex(raw_idx).tz_localize("UTC") \
+                      if raw_idx.tzinfo is None else pd.DatetimeIndex(raw_idx)
+    try:
+        _, net_w_grab = build_net_water_forcing(grab_idx_dt)
+        _, tmn_grab, tmx_grab = __import__("preprocess").build_forcing_for_index(grab_idx_dt)
+        grab_monthly["net_water"] = net_w_grab
+        grab_monthly["temp_min"]  = tmn_grab
+        grab_monthly["temp_max"]  = tmx_grab
+    except Exception:
+        for fc in FORCING_CONCEPTS:
+            grab_monthly[fc] = np.nan
     # Reindex to full concept list, filling absent columns with NaN
     grab_monthly = grab_monthly.reindex(columns=NUTR_CONCEPTS)
 
@@ -249,6 +266,78 @@ def _ridge(X: np.ndarray, y: np.ndarray, alpha: float) -> np.ndarray:
     """Closed-form Ridge: w = (X'X + αI)^{-1} X'y  (no intercept)."""
     XtX = X.T @ X
     return np.linalg.solve(XtX + alpha * np.eye(X.shape[1]), X.T @ y)
+
+
+# ---------------------------------------------------------------------------
+# 3a. Optimal-lag selection via held-out validation MSE
+# ---------------------------------------------------------------------------
+
+def select_optimal_lag(
+    ts:             pd.DataFrame,
+    concept_list:   list[str],
+    n_forcing:      int,
+    candidate_lags: list[int],
+    alpha:          float = 2.0,
+    val_frac:       float = 0.20,
+    tag:            str   = "",
+) -> int:
+    """
+    For each candidate lag fit Ridge on the first (1-val_frac) of the series,
+    evaluate MSE on the held-out tail, return the lag with lowest validation MSE.
+    """
+    C         = len(concept_list)
+    endo_cols = concept_list[n_forcing:]
+    arr_full  = ts[concept_list].dropna(subset=endo_cols, how="all")
+    arr       = arr_full.values.astype(np.float64)
+
+    col_min   = np.nanmin(arr,  axis=0)
+    col_range = np.nanmax(arr,  axis=0) - col_min
+    col_range[col_range == 0] = 1.0
+    arr_norm  = (arr - col_min) / col_range
+
+    col_means = np.nanmean(arr_norm, axis=0)
+    col_means[np.isnan(col_means)] = 0.5
+    nan_mask   = np.isnan(arr_norm)
+    arr_filled = arr_norm.copy()
+    arr_filled[nan_mask] = np.take(col_means, np.where(nan_mask)[1])
+
+    T         = len(arr_filled)
+    val_start = max(int(T * (1 - val_frac)), min(candidate_lags) + 2)
+    endo_idx  = list(range(n_forcing, C))
+
+    scores: dict[int, float] = {}
+    for lag in candidate_lags:
+        if val_start - lag < 2 or T - val_start < 1:
+            continue
+        X_tr = arr_filled[:val_start - lag]
+        Y_tr = arr_filled[lag:val_start]
+        X_vl = arr_filled[val_start - lag: T - lag]
+        Y_vl = arr_filled[val_start:]
+
+        W = np.zeros((C, C))
+        for j in range(n_forcing, C):
+            if nan_mask[lag:val_start, j].mean() > 0.60:
+                continue
+            W[:, j] = _ridge(X_tr, Y_tr[:, j], alpha=alpha)
+        W[:, :n_forcing] = 0.0
+
+        Y_pred   = X_vl @ W
+        obs_mask = ~nan_mask[val_start:, :][:, endo_idx]
+        if obs_mask.sum() == 0:
+            continue
+        scores[lag] = float(np.mean(
+            (Y_pred[:, endo_idx][obs_mask] - Y_vl[:, endo_idx][obs_mask]) ** 2
+        ))
+
+    if not scores:
+        best = candidate_lags[0]
+    else:
+        best = min(scores, key=scores.get)
+
+    score_str = "  ".join(f"lag={k}: {v:.4f}" for k, v in sorted(scores.items()))
+    print(f"  [{tag}] Lag selection — {score_str}")
+    print(f"  [{tag}] → best lag = {best}")
+    return best
 
 
 # ---------------------------------------------------------------------------
@@ -735,8 +824,12 @@ def main() -> None:
     print("="*60)
 
     phys_daily = load_physical_concept_timeseries()
+    best_lag_phys = select_optimal_lag(
+        phys_daily, PHYS_CONCEPTS, N_FORCING,
+        candidate_lags=[1, 2, 3, 7], alpha=2.0, tag="Physical",
+    )
     W_phys, arr_phys, _, _ = learn_fcm_weights(
-        phys_daily, PHYS_CONCEPTS, N_FORCING, alpha=2.0, lag=1,
+        phys_daily, PHYS_CONCEPTS, N_FORCING, alpha=2.0, lag=best_lag_phys,
         tag="Physical daily",
     )
 
@@ -776,8 +869,12 @@ def main() -> None:
     print("="*60)
 
     nutr_monthly = load_nutrient_concept_timeseries()
+    best_lag_nutr = select_optimal_lag(
+        nutr_monthly, NUTR_CONCEPTS, N_FORCING,
+        candidate_lags=[1, 2, 3], alpha=1.5, tag="Nutrient",
+    )
     W_nutr, arr_nutr, _, _ = learn_fcm_weights(
-        nutr_monthly, NUTR_CONCEPTS, N_FORCING, alpha=1.5, lag=1,
+        nutr_monthly, NUTR_CONCEPTS, N_FORCING, alpha=1.5, lag=best_lag_nutr,
         tag="Nutrient monthly",
     )
 

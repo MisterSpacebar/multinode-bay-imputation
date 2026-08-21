@@ -88,9 +88,9 @@ def _compute_loss(model, val_ds, ei, ew, extra_mask_channels=None,
     """
     Compute mean HuberLoss on validation windows.
 
-    extra_mask_channels : list of int — feature indices to always mask to 0
-    remove_edge_idx     : int         — index into edge list to zero out
-    ew_override         : tensor      — replacement edge weights
+    extra_mask_channels : list of int  - feature indices to always mask to 0
+    remove_edge_idx     : int          - index into edge list to zero out
+    ew_override         : tensor       - replacement edge weights
     """
     criterion = nn.HuberLoss(delta=1.0)
     loader    = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
@@ -284,7 +284,7 @@ def print_summary(ch_imp, cross_df, attn_df):
         print(f"  {r['src']:30s} → {r['tgt']:30s}   attn={r['weight']:.4f}")
 
     print("\nRecommendation: features with HIGH importance score are critical")
-    print("  for spatial imputation — avoid masking or dropping them.")
+    print("  for spatial imputation  - avoid masking or dropping them.")
     print("  Features with LOW importance are candidates for dimensionality")
     print("  reduction or exclusion if sensors fail.")
 

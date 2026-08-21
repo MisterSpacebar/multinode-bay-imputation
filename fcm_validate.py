@@ -11,14 +11,14 @@ Two analyses:
      actual observed A(t+1).
 
      Metrics per concept:
-       R²   — fraction of variance explained
-       RMSE — root-mean-square error in normalised space [0,1]
-       MAE  — mean absolute error in normalised space
+       R²    - fraction of variance explained
+       RMSE  - root-mean-square error in normalised space [0,1]
+       MAE   - mean absolute error in normalised space
 
      Plots:
-       21_fcm_hindcast_scatter.png  — predicted vs actual scatter, one panel
+       21_fcm_hindcast_scatter.png   - predicted vs actual scatter, one panel
                                       per endogenous concept (4×3 grid)
-       22_fcm_hindcast_timeseries.png — observed vs predicted time series for
+       22_fcm_hindcast_timeseries.png  - observed vs predicted time series for
                                        the 6 most informative concepts
 
   2. Event backcasting
@@ -76,7 +76,7 @@ KEY_CONCEPTS = ["Water Temp", "Salinity", "ODO (mg/L)", "DO (%Sat)",
 # Die-off events: (label, seed_month, event_month, n_steps, color)
 EVENTS = [
     {
-        "label":       "Sept 2021 — Fish & Seagrass Die-off",
+        "label":       "Sept 2021  - Fish & Seagrass Die-off",
         "short":       "Sept 2021",
         "seed_month":  "2021-09",   # first available month (grab samples start here)
         "event_month": "2021-09",   # event is the seed month itself
@@ -84,7 +84,7 @@ EVENTS = [
         "color":       "#d62728",
     },
     {
-        "label":       "Oct 2022 — Seagrass Die-off",
+        "label":       "Oct 2022  - Seagrass Die-off",
         "short":       "Oct 2022",
         "seed_month":  "2022-08",
         "event_month": "2022-10",
@@ -106,13 +106,13 @@ def prepare_data() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
                              pd.PeriodIndex, pd.DataFrame, np.ndarray]:
     """
     Returns:
-      W          — (16, 16) FCM weight matrix
-      arr_norm   — (T, 16) normalised series with NaN preserved for true obs
-      col_min    — (16,)  per-concept min
-      col_range  — (16,)  per-concept range
-      index      — (T,)   monthly PeriodIndex
-      ts_clean   — original DataFrame (NaN = genuinely missing)
-      obs_mask   — (T, 16) bool — True where the original grab/sensor data
+      W           - (16, 16) FCM weight matrix
+      arr_norm    - (T, 16) normalised series with NaN preserved for true obs
+      col_min     - (16,)  per-concept min
+      col_range   - (16,)  per-concept range
+      index       - (T,)   monthly PeriodIndex
+      ts_clean    - original DataFrame (NaN = genuinely missing)
+      obs_mask    - (T, 16) bool  - True where the original grab/sensor data
                    was actually observed (not NaN-filled)
     """
     ts = load_nutrient_concept_timeseries()
@@ -131,7 +131,7 @@ def prepare_data() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
     # True observation mask BEFORE NaN-filling
     obs_mask = ~ts_clean.isna().values   # (T, 16) bool
 
-    # Normalised array — keep NaN where data was absent
+    # Normalised array  - keep NaN where data was absent
     arr      = ts_clean.values.astype(np.float64)
     arr_norm = (arr - col_min) / col_range   # NaN preserved
 
@@ -154,9 +154,9 @@ def one_step_hindcast(
     positions where the data was genuinely observed.
 
     Returns:
-      pred      — (T-1, 16)  FCM one-step predictions
-      obs       — (T-1, 16)  actual observed values (NaN where not measured)
-      eval_mask — (T-1, 16)  bool — True where BOTH A(t) and A(t+1) were
+      pred       - (T-1, 16)  FCM one-step predictions
+      obs        - (T-1, 16)  actual observed values (NaN where not measured)
+      eval_mask  - (T-1, 16)  bool  - True where BOTH A(t) and A(t+1) were
                               genuinely observed (valid evaluation pairs)
     """
     T = arr_norm.shape[0]
@@ -241,7 +241,7 @@ def plot_hindcast_scatter(
         r2   = metrics.loc[clabel, "R2"]   if clabel in metrics.index else np.nan
         rmse = metrics.loc[clabel, "RMSE"] if clabel in metrics.index else np.nan
 
-        # Scatter — colour by concept group, annotate n
+        # Scatter  - colour by concept group, annotate n
         color = "#27ae60" if ci >= N_NUTR - 5 else "#2055c8"
         if len(pm) == 0:
             ax.text(0.5, 0.5, "no valid\nobservation pairs",
@@ -276,7 +276,7 @@ def plot_hindcast_scatter(
         ax.axis("off")
 
     fig.suptitle(
-        "FCM One-step-ahead Hindcast — Nutrient FCM (monthly, 2021–2026)\n"
+        "FCM One-step-ahead Hindcast  - Nutrient FCM (monthly, 2021–2026)\n"
         "Each panel: observed A(t+1) vs FCM-predicted A(t+1)  |  "
         "Values normalised to [0,1]  |  Dashed = perfect prediction",
         fontsize=11, fontweight="bold",
@@ -365,7 +365,7 @@ def plot_hindcast_timeseries(
                fontsize=9, framealpha=0.9, bbox_to_anchor=(0.5, -0.01))
 
     fig.suptitle(
-        "FCM Hindcast Time Series — Observed vs 1-step FCM Prediction\n"
+        "FCM Hindcast Time Series  - Observed vs 1-step FCM Prediction\n"
         "Coloured bands = die-off event months  |  ★ = event month",
         fontsize=11, fontweight="bold",
     )
@@ -482,7 +482,7 @@ def plot_backcast(
     rmse_str = "  |  ".join(rmse_parts[:3])
 
     fig.suptitle(
-        f"FCM Backcast — {ev['label']}\n"
+        f"FCM Backcast  - {ev['label']}\n"
         f"Seeded at {pd.Period(ev['seed_month'],'M').strftime('%b %Y')}  |  "
         f"★ = die-off event month  |  RMSE (norm.): {rmse_str}",
         fontsize=11, fontweight="bold",
@@ -546,7 +546,7 @@ def main() -> None:
         VIZ_DIR / "24_fcm_backcast_oct2022.png",
     ]
     for ev, out_path in zip(EVENTS, out_paths):
-        print(f"[Backcast] {ev['short']} — seeded at {ev['seed_month']}...")
+        print(f"[Backcast] {ev['short']}  - seeded at {ev['seed_month']}...")
         plot_backcast(ev, W, arr_norm, col_min, col_range, index, out_path)
         if not out_path.exists():
             print(f"  [SKIP] {out_path.name} not generated")

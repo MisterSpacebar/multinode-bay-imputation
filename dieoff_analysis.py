@@ -4,8 +4,8 @@ dieoff_analysis.py
 Investigates environmental conditions correlated with the two documented
 Biscayne Bay biological die-off events using the 2021-2024 grab-sample data.
 
-  EVENT 1 — September 2021   fish + seagrass die-off
-  EVENT 2 — October   2022   seagrass die-off
+  EVENT 1  - September 2021   fish + seagrass die-off
+  EVENT 2  - October   2022   seagrass die-off
 
 Five analyses are produced:
 
@@ -46,7 +46,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
+import contextily as ctx
+from pyproj import Transformer
 from pathlib import Path
+
+_to_merc = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+def _merc(lon, lat): return _to_merc.transform(lon, lat)
 
 ANALYSIS_DIR = Path("analysis")
 VIZ_DIR      = Path("visualizations")
@@ -89,7 +94,7 @@ BAY_SITES    = {"BB14", "BB17", "BB18", "BB22", "BB24", "BB25", "BB26", "BB28"}
 # Die-off events: (label, event_month, lead_start_month, follow_end_month)
 EVENTS = [
     {
-        "label":       "Sept 2021 — Fish & Seagrass Die-off",
+        "label":       "Sept 2021  - Fish & Seagrass Die-off",
         "short":       "Sept 2021",
         "event_month": "2021-09",
         "lead_months": ["2021-07", "2021-08", "2021-09"],
@@ -97,7 +102,7 @@ EVENTS = [
         "color":       "#d62728",
     },
     {
-        "label":       "Oct 2022 — Seagrass Die-off",
+        "label":       "Oct 2022  - Seagrass Die-off",
         "short":       "Oct 2022",
         "event_month": "2022-10",
         "lead_months": ["2022-08", "2022-09", "2022-10"],
@@ -122,7 +127,9 @@ def load_grab_data() -> pd.DataFrame:
     df["lat_dec"] = pd.to_numeric(df["lat_dec"], errors="coerce")
     df["lon_dec"] = pd.to_numeric(df["lon_dec"], errors="coerce")
     df["period"]  = df["datetime"].dt.to_period("M")
-    return df[df["sample_type"] == "Surface"].copy()
+    df = df[df["sample_type"] == "Surface"].copy()
+    # Exclude GOC inlet/reef/outfall sites (ocean-side, outside the bay proper)
+    return df[~df["site_type"].isin({"Inlet", "Reef", "Outfall"})].copy()
 
 
 def compute_baseline(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
@@ -143,7 +150,7 @@ def site_snapshot(df: pd.DataFrame, month: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Analysis 1 — Anomaly heatmap
+# Analysis 1  - Anomaly heatmap
 # ---------------------------------------------------------------------------
 
 def plot_anomaly_heatmap(
@@ -196,18 +203,27 @@ def plot_anomaly_heatmap(
                 ax.text(j, i, f"{v:+.1f}", ha="center", va="center",
                         fontsize=7, color=col)
 
-    # Event-month row borders
+    # Event-month row borders — label placed left of axes using blended transform
+    import matplotlib.transforms as transforms
+    n_cols = len(FEAT_RAW)
     for ev in EVENTS:
         for m in ev["lead_months"][-1:]:   # just the event month itself
             if m in month_strs:
                 row = month_strs.index(m)
                 rect = plt.Rectangle((-0.5, row - 0.5),
-                                     len(FEAT_RAW), 1,
+                                     n_cols, 1,
                                      fill=False, edgecolor=ev["color"],
                                      lw=2.5, zorder=10)
                 ax.add_patch(rect)
-                ax.text(-0.7, row, ev["short"], ha="right", va="center",
-                        fontsize=8, color=ev["color"], fontweight="bold")
+                # x in axes fraction (-0.01 = just left of left edge), y in data coords
+                blend = transforms.blended_transform_factory(
+                    ax.transAxes, ax.transData)
+                ax.annotate(ev["short"], xy=(-0.01, row),
+                            xycoords=blend, ha="right", va="center",
+                            fontsize=8.5, color=ev["color"], fontweight="bold",
+                            annotation_clip=False,
+                            bbox=dict(boxstyle="round,pad=0.2", fc="white",
+                                      alpha=0.85, lw=0))
 
     plt.colorbar(im, ax=ax, label="Z-score", fraction=0.03, pad=0.02)
     plt.tight_layout()
@@ -220,7 +236,7 @@ def plot_anomaly_heatmap(
 
 
 # ---------------------------------------------------------------------------
-# Analysis 2 — Spatial maps (DO + DIN + Temp)
+# Analysis 2  - Spatial maps (DO + DIN + Temp)
 # ---------------------------------------------------------------------------
 
 def plot_spatial_maps(df: pd.DataFrame) -> None:
@@ -314,9 +330,117 @@ def plot_spatial_maps(df: pd.DataFrame) -> None:
     print(f"  saved → {out}")
 
 
-# ---------------------------------------------------------------------------
-# Analysis 3 — Pre-event lead-up
-# ---------------------------------------------------------------------------
+def plot_spatial_maps_basemap(df: pd.DataFrame) -> None:
+    """Figure 17a - same as 17 but overlaid on a CartoDB basemap."""
+    plot_vars = [
+        ("do_per",  "DO (% Sat)",   "RdYlGn",  False, (50, 105)),
+        ("din",     "DIN (µmol/L)", "YlOrRd",  False, (0,  20)),
+        ("nh4",     "NH4 (µmol/L)", "YlOrRd",  False, (0,  15)),
+    ]
+
+    # Fixed bounds extended north to Haulover to show monitoring gap
+    x0, y0 = _merc(-80.230, 25.700)
+    x1, y1 = _merc(-80.100, 25.930)
+
+    # Sensor station positions (deployed 2025+, not at event time)
+    SENSOR_LOCS = [
+        (25.9114, -80.1373, "L0"),
+        (25.8749, -80.1832, "L1"),
+        (25.8704, -80.1649, "Bay"),
+    ]
+    JFK_Y = _merc(-80.20, 25.853)[1]
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 11))
+    fig.subplots_adjust(wspace=0.06, hspace=0.10,
+                        left=0.04, right=0.97, top=0.91, bottom=0.05)
+
+    for row, ev in enumerate(EVENTS):
+        snap = site_snapshot(df, ev["event_month"])
+        snap = snap.dropna(subset=["lat_dec", "lon_dec"])
+
+        for col, (var, vlab, cmap, log, (vmin, vmax)) in enumerate(plot_vars):
+            ax = axes[row, col]
+            ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
+            try:
+                ctx.add_basemap(ax, crs="EPSG:3857",
+                                source=ctx.providers.CartoDB.Positron,
+                                zoom=12, attribution=False)
+            except Exception:
+                ax.set_facecolor("#d4e9f7")
+            ax.set_xticks([]); ax.set_yticks([])
+
+            # JFK Causeway reference line
+            ax.axhline(JFK_Y, color="#555", lw=1.0, ls="--", alpha=0.6, zorder=4)
+            if col == 0:
+                ax.text(x0 + (x1-x0)*0.02, JFK_Y + (y1-y0)*0.01,
+                        "JFK Causeway", fontsize=6, color="#555",
+                        fontstyle="italic", zorder=5)
+
+            # Sensor stations (hollow squares - not deployed at event time)
+            for slat, slon, slabel in SENSOR_LOCS:
+                xm, ym = _merc(slon, slat)
+                ax.scatter(xm, ym, s=200, c="none", marker="s",
+                           edgecolors="#1565c0", linewidths=1.8,
+                           linestyle="--", zorder=7)
+                if col == 0:
+                    ax.annotate(slabel, (xm, ym), xytext=(4, 3),
+                                textcoords="offset points", fontsize=5.5,
+                                color="#1565c0", zorder=8)
+
+            vals = pd.to_numeric(snap[var], errors="coerce")
+            norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+            cm   = plt.get_cmap(cmap)
+
+            for site, srow in snap.iterrows():
+                if np.isnan(srow["lat_dec"]) or np.isnan(srow["lon_dec"]):
+                    continue
+                v = vals.get(site, np.nan)
+                xm, ym = _merc(srow["lon_dec"], srow["lat_dec"])
+                c = cm(norm(v)) if not np.isnan(v) else "lightgrey"
+                marker = "^" if site in CANAL_SITES else "o"
+                sz     = 300 if site in CANAL_SITES else 200
+                ax.scatter(xm, ym, s=sz, c=[c], marker=marker,
+                           edgecolors="white", linewidths=1.3, zorder=5)
+                if not np.isnan(v):
+                    ax.annotate(f"{site}\n{v:.1f}", (xm, ym),
+                                xytext=(4, 4), textcoords="offset points",
+                                fontsize=6, zorder=6,
+                                bbox=dict(boxstyle="round,pad=0.15",
+                                          fc="white", alpha=0.7, lw=0))
+
+            sm = plt.cm.ScalarMappable(cmap=cm, norm=norm)
+            sm.set_array([])
+            cb = plt.colorbar(sm, ax=ax, fraction=0.04, pad=0.02, shrink=0.85)
+            cb.set_label(vlab, fontsize=8)
+            cb.ax.tick_params(labelsize=7)
+
+            if row == 0:
+                ax.set_title(vlab, fontsize=10, fontweight="bold", pad=5)
+            if col == 0:
+                ax.set_ylabel(ev["short"], fontsize=10.5, fontweight="bold",
+                              color=ev["color"], labelpad=6)
+
+    # Marker legend
+    import matplotlib.lines as mlines
+    bay_h    = mpatches.Patch(fc="#888", label="● Bay station")
+    canal_h  = mpatches.Patch(fc="#d32f2f", label="▲ Canal mouth (LR01, MR01)")
+    grey_h   = mpatches.Patch(fc="lightgrey", label="No sample this month")
+    sensor_h = mlines.Line2D([], [], color="#1565c0", marker="s", linestyle="",
+                              ms=8, markerfacecolor="none", markeredgewidth=1.8,
+                              label="□ Sensor station (not deployed 2021-2022)")
+    fig.legend(handles=[bay_h, canal_h, grey_h, sensor_h], loc="lower center",
+               ncol=4, fontsize=8.5, framealpha=0.9, bbox_to_anchor=(0.5, -0.01))
+
+    fig.suptitle(
+        "Spatial Snapshot at Die-off Events - Bay-interior sites\n"
+        "Colour = measured value at event month  |  ▲ Canal mouth  ● Open bay",
+        fontsize=12, fontweight="bold",
+    )
+
+    out = VIZ_DIR / "17a_dieoff_spatial_basemap.png"
+    plt.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  saved → {out}")
 
 def plot_leadup(df: pd.DataFrame, mean: pd.Series, std: pd.Series) -> None:
     """
@@ -428,9 +552,109 @@ def plot_leadup(df: pd.DataFrame, mean: pd.Series, std: pd.Series) -> None:
     print(f"  saved → {out}")
 
 
-# ---------------------------------------------------------------------------
-# Analysis 4 — FCM projection from event state
-# ---------------------------------------------------------------------------
+def plot_leadup_compact(df: pd.DataFrame, mean: pd.Series, std: pd.Series) -> None:
+    """
+    Figure 18a - compact version for two-column papers.
+    Both events on the same 3-panel figure (DO%, NH4, DIN).
+    X-axis = months relative to the event (−2, −1, 0, +1, +2).
+    """
+    KEY_VARS = [
+        ("do_per", "DO (% Sat)",   {"color": "#d62728", "lw": 1.5,
+                                     "thresh": (75, "75% hypoxia", "low")}),
+        ("nh4",    "NH4 (µmol/L)", {"color": None,      "lw": 1.5,
+                                     "thresh": (10, "10 µmol/L concern", "high")}),
+        ("din",    "DIN (µmol/L)", {"color": None,      "lw": 1.5,
+                                     "thresh": (10, "10 µmol/L concern", "high")}),
+    ]
+    # Months relative to event: lead 2, event 0, follow 2
+    REL = [-2, -1, 0, 1, 2]
+
+    fig, axes = plt.subplots(1, 3, figsize=(9, 3.6))
+    fig.subplots_adjust(wspace=0.35, left=0.07, right=0.97, top=0.82, bottom=0.18)
+
+    for ai, (var, vlabel, style) in enumerate(KEY_VARS):
+        ax = axes[ai]
+
+        # Baseline band
+        ax.axhspan(mean[var] - std[var], mean[var] + std[var],
+                   color="gray", alpha=0.13)
+        ax.axhline(mean[var], color="gray", lw=0.8, ls=":", alpha=0.7)
+
+        # Danger threshold
+        tval, tlabel, _ = style["thresh"]
+        ax.axhline(tval, color="#8B0000", lw=1.2, ls="-.", alpha=0.8,
+                   label=tlabel)
+
+        # Event month vertical
+        ax.axvline(0, color="#333", lw=1.0, ls="--", alpha=0.5)
+
+        for ev in EVENTS:
+            all_months = ev["lead_months"] + ev["follow_months"]
+            avg = monthly_spatial_avg(df, sorted(set(all_months)))
+            if var not in avg.columns:
+                continue
+
+            ev_idx  = ev["lead_months"].index(ev["event_month"])
+            ordered = sorted(set(all_months))
+            ev_pos  = ordered.index(ev["event_month"])
+
+            # Build relative-time series, aligned to event_month = 0
+            rel_x, vals = [], []
+            for ri, r in enumerate(REL):
+                abs_pos = ev_pos + r
+                if 0 <= abs_pos < len(ordered):
+                    m = ordered[abs_pos]
+                    v = avg[var].get(pd.Period(m, "M"), np.nan) \
+                        if m in [str(p) for p in avg.index] else np.nan
+                    rel_x.append(r); vals.append(v)
+
+            c = ev["color"]
+            ax.plot(rel_x, vals, "o-", color=c, lw=2.0, ms=6, zorder=5,
+                    label=ev["short"], clip_on=False)
+
+            # Annotate value at event month (x=0)
+            zero_idx = rel_x.index(0) if 0 in rel_x else None
+            if zero_idx is not None and not np.isnan(vals[zero_idx]):
+                ax.annotate(f"{vals[zero_idx]:.1f}",
+                            (0, vals[zero_idx]),
+                            xytext=(4, 5), textcoords="offset points",
+                            fontsize=7.5, color=c, fontweight="bold")
+
+        ax.set_xticks(REL)
+        ax.set_xticklabels([f"t{r:+d}" if r != 0 else "Event\n(t=0)"
+                            for r in REL], fontsize=8.5)
+        ax.set_xlabel("Months relative to event", fontsize=8.5)
+        ax.set_ylabel(vlabel, fontsize=9)
+        ax.set_title(vlabel, fontsize=10, fontweight="bold", pad=4)
+        ax.grid(True, axis="y", alpha=0.25)
+        ax.tick_params(labelsize=8)
+
+        # Panel letter
+        ax.text(0.03, 0.97, f"({chr(97+ai)})", transform=ax.transAxes,
+                va="top", fontsize=9, fontweight="bold",
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", alpha=0.7, lw=0))
+
+    # Shared legend below all panels
+    handles = [plt.Line2D([0],[0], color=ev["color"], lw=2, marker="o",
+                           ms=6, label=ev["short"]) for ev in EVENTS]
+    handles += [plt.Line2D([0],[0], color="#8B0000", lw=1.2, ls="-.",
+                            label="Eutrophication / hypoxia threshold"),
+                plt.Rectangle((0,0),1,1, fc="gray", alpha=0.3,
+                               label="Baseline ±1 SD")]
+    fig.legend(handles=handles, loc="lower center", ncol=4,
+               fontsize=8.5, framealpha=0.9,
+               bbox_to_anchor=(0.52, -0.05))
+
+    fig.suptitle(
+        "Pre-event lead-up at bay-interior sites\n"
+        "Grey band = baseline ±1 SD  |  t=0 = event month",
+        fontsize=10, fontweight="bold",
+    )
+
+    out = VIZ_DIR / "18a_dieoff_leadup_compact.png"
+    fig.savefig(out, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"  saved → {out}")
 
 def _sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
@@ -438,7 +662,7 @@ def _sigmoid(x):
 
 def plot_fcm_projection(df: pd.DataFrame) -> None:
     if not FCM_WEIGHTS_NUTR.exists():
-        print("  [SKIP] fcm_weights_nutrient.csv not found — run fcm.py first")
+        print("  [SKIP] fcm_weights_nutrient.csv not found  - run fcm.py first")
         return
 
     W_df = pd.read_csv(FCM_WEIGHTS_NUTR, index_col=0)
@@ -557,7 +781,7 @@ def plot_fcm_projection(df: pd.DataFrame) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Analysis 5 — Cross-event anomaly comparison
+# Analysis 5  - Cross-event anomaly comparison
 # ---------------------------------------------------------------------------
 
 def plot_event_comparison(
@@ -594,7 +818,7 @@ def plot_event_comparison(
     ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
     ax.set_ylabel("Z-score vs 2021–2026 baseline", fontsize=10)
     ax.set_title(
-        "Anomaly Comparison — Sept 2021 vs Oct 2022 Die-off Events\n"
+        "Anomaly Comparison  - Sept 2021 vs Oct 2022 Die-off Events\n"
         "Values averaged across all Biscayne Bay Surface stations at event month",
         fontsize=11, fontweight="bold",
     )
@@ -653,10 +877,11 @@ def print_summary(
     print("KEY FINDINGS:")
     print("  • Both events: DO suppressed at northern bay + canal sites")
     print("  • Sept 2021:   Low salinity (fresh water influx from canals)")
-    print("                 NH4 spike at LR01 (21.9) and MR01 (10.8) µmol/L")
-    print("  • Oct 2022:    More widespread hypoxia; LR01 DO = 49.6%")
-    print("                 Extreme DIN at GOC-014 (39.0 µmol/L)")
-    print("                 NH4 peak at GOC-014 (37.7 µmol/L)")
+    print("                 NH4 spike at LR01 (12.6) and MR01 (7.2) µmol/L on sample date")
+    print("                 (acute hypoxia likely peaked before the 21-Sep grab sample)")
+    print("  • Oct 2022:    More widespread hypoxia; LR01 DO = 49.6% on sample date")
+    print("                 GOC-014 DIN = 39.0, NH4 = 37.7 µmol/L (ocean outfall sites,")
+    print("                 now excluded from bay-interior stats but ecologically relevant)")
     print("  • Canal discharge (LR01, MR01) drives nutrient loading in both events")
     print("  • No pre-event rainfall data available for 2021-2022")
     print("    (rainfall CSVs only cover 2025-2026)")
@@ -680,8 +905,14 @@ def main() -> None:
     print("\n[2] Spatial maps...")
     plot_spatial_maps(df)
 
+    print("\n[2a] Spatial maps on basemap (17a)...")
+    plot_spatial_maps_basemap(df)
+
     print("\n[3] Pre-event lead-up...")
     plot_leadup(df, mean, std)
+
+    print("\n[3a] Compact lead-up (18a)...")
+    plot_leadup_compact(df, mean, std)
 
     print("\n[4] FCM forward projection...")
     plot_fcm_projection(df)

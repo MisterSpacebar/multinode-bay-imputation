@@ -1,12 +1,12 @@
-BISCAYNE BAY WATER QUALITY ANALYSIS — FIGURE SUMMARY
-Generated: 2026-08-18 23:36
+BISCAYNE BAY WATER QUALITY ANALYSIS  - FIGURE SUMMARY
+Generated: 2026-08-20 19:30
 ========================================================================
 This document describes every figure produced by the multi-node
 ST-GNN imputation and FCM causal analysis pipeline. Numbers are
 pulled directly from the analysis CSV files.
 
 ========================================================================
-SECTION 1 — ST-GNN IMPUTATION RESULTS (FIGURES 01–07)
+SECTION 1  - ST-GNN IMPUTATION RESULTS (FIGURES 01–07)
 ========================================================================
 The Spatial-Temporal Graph Neural Network (ST-GNN) was trained on
 5-minute water quality readings from 7 stations across North and
@@ -15,14 +15,14 @@ It imputes sensor gaps using readings at neighbouring stations,
 air temperature and net water balance as external forcing.
 
 ------------------------------------------------------------
-Figure 01 — 01_timeseries_overview.png
+Figure 01  - 01_timeseries_overview.png
 ------------------------------------------------------------
 TYPE: Multi-panel time-series line chart
 WHAT IT SHOWS: Hourly-resampled observed + imputed values for
 temperature, salinity, and dissolved oxygen at all 7 nodes,
 stacked vertically. Each node has its own colour. Imputed regions
 are shaded orange; observed data is plotted in solid blue.
-PURPOSE: Gives a bird's-eye view of the full dataset — how long
+PURPOSE: Gives a bird's-eye view of the full dataset  - how long
 each station was active, where the large data gaps are, and
 whether the imputed signal looks plausible relative to neighbours.
 WHAT TO LOOK FOR: Orange shading concentrated in 2025 (new data
@@ -30,7 +30,7 @@ is sparser there); the 2026 deployment filling in previously
 missing months; consistent seasonal cycles in temperature.
 
 ------------------------------------------------------------
-Figure 02 — 02_coverage_bars.png
+Figure 02  - 02_coverage_bars.png
 ------------------------------------------------------------
 TYPE: Grouped horizontal bar chart
 WHAT IT SHOWS: For each of the 8 sensor features and each of the
@@ -44,7 +44,7 @@ KEY FIGURES (from latest run):
   • Baseline model loss (all features present): 0.002
 
 ------------------------------------------------------------
-Figure 03 — 03_channel_importance.png
+Figure 03  - 03_channel_importance.png
 ------------------------------------------------------------
 TYPE: Horizontal bar chart
 WHAT IT SHOWS: Permutation importance of each sensor feature for
@@ -64,19 +64,19 @@ KEY FINDINGS:
   • spec_cond_uScm        importance=0.000  
   • depth_m               importance=0.000  
   • pressure_psia         importance=0.000  
-Temperature and salinity dominate — losing either halves the
+Temperature and salinity dominate  - losing either halves the
 model's ability to impute neighbours. Depth, pressure, and
 specific conductance contribute nothing (zero spatial information
 transfer), making them candidates for sensor reduction.
 
 ------------------------------------------------------------
-Figure 04 — 04_spatial_graph.png
+Figure 04  - 04_spatial_graph.png
 ------------------------------------------------------------
 TYPE: Geographic network diagram on CartoDB basemap
 WHAT IT SHOWS: The 7 stations plotted at their true lat/lon. Arrow
 thickness and transparency encode the mean GAT attention weight
 (how strongly node j attends to node i when imputing its values).
-PURPOSE: Reveals the spatial information flow the model learned —
+PURPOSE: Reveals the spatial information flow the model learned  -
 which stations act as 'information donors' for their neighbours.
 
 KEY FINDINGS (top attention pairs from attention_weights.csv):
@@ -87,11 +87,11 @@ KEY FINDINGS (top attention pairs from attention_weights.csv):
   • L0                             → L2                              attn=0.362
   • L2                             → L6                              attn=0.355
 consolidated_crest5 and L7 attend to each other exclusively (1.0)
-— both are sparse stations with no nearby alternatives. L2 is the
+ - both are sparse stations with no nearby alternatives. L2 is the
 strongest information source for the northern cluster.
 
 ------------------------------------------------------------
-Figure 05 — 05_attention_heatmap.png
+Figure 05  - 05_attention_heatmap.png
 ------------------------------------------------------------
 TYPE: Colour-coded attention weight matrix (rows=target, cols=source)
 WHAT IT SHOWS: The same GAT attention weights as Figure 04, but
@@ -100,7 +100,7 @@ PURPOSE: Shows the full attention topology, including weak links
 that are hard to read from the arrow diagram.
 
 ------------------------------------------------------------
-Figure 06 — 06_node_<NAME>.png  (7 figures, one per station)
+Figure 06  - 06_node_<NAME>.png  (7 figures, one per station)
 ------------------------------------------------------------
 TYPE: Three-panel time-series (temperature, salinity, DO mg/L)
 WHAT IT SHOWS: Full 17-month record at each individual node.
@@ -111,7 +111,7 @@ STATIONS: L0 (Haulover), L1 (Biscayne Canal), L2 (Little River),
 L6 (NBV North), L7 (Miami River), biscayne_bay, consolidated_crest5
 
 ------------------------------------------------------------
-Figure 07 — 07_monthly_salinity.png
+Figure 07  - 07_monthly_salinity.png
 ------------------------------------------------------------
 TYPE: Monthly grouped box-plot
 WHAT IT SHOWS: Distribution of observed salinity values for each
@@ -122,7 +122,7 @@ PURPOSE: Captures the seasonal salinity cycle. The wet season
 the dry season (Dec–Apr) allows recovery toward oceanic values.
 
 ========================================================================
-SECTION 2 — FUZZY COGNITIVE MAP: PHYSICAL FCM (FIGURES 08–11)
+SECTION 2  - FUZZY COGNITIVE MAP: PHYSICAL FCM (FIGURES 08–11)
 ========================================================================
 The Physical FCM uses 11 concepts (3 atmospheric forcing + 8 sensor
 features) at daily resolution (2025-2026). It learns which variables
@@ -130,7 +130,7 @@ causally drive which others via Ridge regression with a 1-day lag
 (selected by cross-validated lag search over lags 1, 2, 3, 7 days).
 
 ------------------------------------------------------------
-Figure 08 — 08_fcm_heatmap.png
+Figure 08  - 08_fcm_heatmap.png
 ------------------------------------------------------------
 TYPE: Signed colour matrix (red=suppress, blue=promote)
 WHAT IT SHOWS: The 11×11 FCM weight matrix W. Entry W[i,j] > 0
@@ -149,7 +149,7 @@ TOP PHYSICAL FCM RELATIONSHIPS:
   • Pressure               promotes   Water Temp              W=0.235
 
 ------------------------------------------------------------
-Figure 09 — 09_fcm_graph.png
+Figure 09  - 09_fcm_graph.png
 ------------------------------------------------------------
 TYPE: Force-directed causal graph
 WHAT IT SHOWS: The same Physical FCM weights as a network where
@@ -159,20 +159,20 @@ PURPOSE: More readable than the heatmap for identifying causal
 chains and feedback loops.
 
 ------------------------------------------------------------
-Figure 10 — 10_fcm_scenarios.png
+Figure 10  - 10_fcm_scenarios.png
 ------------------------------------------------------------
 TYPE: Multi-line trajectory chart (4 scenarios × 11 concepts)
 WHAT IT SHOWS: Starting from the mean baseline activation, the FCM
 is simulated forward for 60 days under four forcing scenarios:
-  (1) Baseline — forcing held at mean values
-  (2) Heavy rain — net water balance set to 95th percentile
-  (3) Heat wave  — temp_min/temp_max set to 95th percentile
-  (4) Cold & dry — temp and net water set to 5th percentile
+  (1) Baseline  - forcing held at mean values
+  (2) Heavy rain  - net water balance set to 95th percentile
+  (3) Heat wave   - temp_min/temp_max set to 95th percentile
+  (4) Cold & dry  - temp and net water set to 5th percentile
 PURPOSE: 'What-if' projections. Shows how ecosystem variables
 would evolve if Miami experienced an extreme weather event.
 
 ------------------------------------------------------------
-Figure 11 — 11_fcm_influence_ranking.png
+Figure 11  - 11_fcm_influence_ranking.png
 ------------------------------------------------------------
 TYPE: Ranked bar chart
 WHAT IT SHOWS: Total causal influence of each concept = sum of
@@ -182,7 +182,7 @@ PURPOSE: Identifies which concepts are control points (drivers)
 vs. downstream indicators. Useful for intervention prioritisation.
 
 ========================================================================
-SECTION 3 — FUZZY COGNITIVE MAP: NUTRIENT FCM (FIGURES 12–15)
+SECTION 3  - FUZZY COGNITIVE MAP: NUTRIENT FCM (FIGURES 12–15)
 ========================================================================
 The Nutrient FCM uses 16 concepts (3 forcing + 8 sensor + 5 nutrient
 extras: pH, Chl-a, Secchi depth, NO₂+NO₃, DIN) at monthly resolution.
@@ -192,7 +192,7 @@ Net water balance (Rain − Hargreaves PET) replaces raw rainfall to
 remove seasonal evaporation confounding.
 
 ------------------------------------------------------------
-Figure 12 — 12_fcm_nutrient_heatmap.png
+Figure 12  - 12_fcm_nutrient_heatmap.png
 ------------------------------------------------------------
 TYPE: Signed colour matrix (16×16)
 WHAT IT SHOWS: Full Nutrient FCM weight matrix.
@@ -210,7 +210,7 @@ TOP NUTRIENT FCM RELATIONSHIPS:
   • NO₂+NO₃                promotes   Chlorophyll-a           W=0.368
 
 ------------------------------------------------------------
-Figure 13 — 13_fcm_nutrient_graph.png
+Figure 13  - 13_fcm_nutrient_graph.png
 ------------------------------------------------------------
 TYPE: Force-directed causal graph (16 nodes)
 WHAT IT SHOWS: Nutrient FCM causal network. Forcing nodes are
@@ -220,7 +220,7 @@ algal growth (Chl-a), which reduces water clarity (Secchi depth),
 which feeds back via light-limited DO production.
 
 ------------------------------------------------------------
-Figure 14 — 14_fcm_nutrient_scenarios.png
+Figure 14  - 14_fcm_nutrient_scenarios.png
 ------------------------------------------------------------
 TYPE: Multi-line scenario trajectories (4 scenarios × 16 concepts)
 WHAT IT SHOWS: Same four scenarios as Figure 10 but at monthly
@@ -230,7 +230,7 @@ PURPOSE: Identifies whether a heat wave or freshwater surplus
 leads to algal bloom conditions (high Chl-a, low Secchi, low DO).
 
 ------------------------------------------------------------
-Figure 15 — 15_fcm_nutrient_ranking.png  &  15_fcm_comparison.png
+Figure 15  - 15_fcm_nutrient_ranking.png  &  15_fcm_comparison.png
 ------------------------------------------------------------
 TYPE: Ranked bar chart + side-by-side heatmap comparison
 WHAT IT SHOWS: Left: influence ranking for the 16 Nutrient FCM
@@ -242,15 +242,15 @@ monthly-scale nutrient dynamics (FCM 2) tell consistent causal
 stories or diverge.
 
 ========================================================================
-SECTION 4 — DIE-OFF EVENT ANALYSIS (FIGURES 16–20)
+SECTION 4  - DIE-OFF EVENT ANALYSIS (FIGURES 16–20)
 ========================================================================
 Two documented biological die-off events are analysed using the
 2021-2024 bi-monthly grab-sample dataset (25 sites, surface samples):
-  EVENT 1: September 2021 — fish + seagrass die-off
-  EVENT 2: October 2022   — seagrass die-off
+  EVENT 1: September 2021  - fish + seagrass die-off
+  EVENT 2: October 2022    - seagrass die-off
 
 ------------------------------------------------------------
-Figure 16 — 16_dieoff_anomaly_heatmap.png
+Figure 16  - 16_dieoff_anomaly_heatmap.png
 ------------------------------------------------------------
 TYPE: Z-score heatmap (features × event months)
 WHAT IT SHOWS: Each variable's Z-score relative to its multi-year
@@ -261,17 +261,17 @@ at the time of each die-off.
 KEY ANOMALIES (from dieoff_anomalies.csv):
 
 ------------------------------------------------------------
-Figure 17 — 17_dieoff_spatial_maps.png
+Figure 17  - 17_dieoff_spatial_maps.png
 ------------------------------------------------------------
 TYPE: Scatter maps (lat/lon) coloured by variable value
 WHAT IT SHOWS: All 25 grab-sample sites plotted at their geographic
 location, colour-coded by DO%, DIN, and temperature at the event
 month. Canal and outfall sites are highlighted.
-PURPOSE: Shows the spatial pattern of stress — which parts of the
+PURPOSE: Shows the spatial pattern of stress  - which parts of the
 bay were worst affected and where the stressor was introduced.
 
 ------------------------------------------------------------
-Figure 18 — 18_dieoff_leadup.png
+Figure 18  - 18_dieoff_leadup.png
 ------------------------------------------------------------
 TYPE: 2-column, multi-row time-series (one column per event)
 WHAT IT SHOWS: 3-month lead-up through each event for five key
@@ -283,7 +283,7 @@ accumulation) or spiked suddenly at the event month. Critical for
 determining how much advance warning is possible.
 
 ------------------------------------------------------------
-Figure 19 — 19_dieoff_fcm_projection.png
+Figure 19  - 19_dieoff_fcm_projection.png
 ------------------------------------------------------------
 TYPE: Multi-line FCM forward simulation from event-month seed
 WHAT IT SHOWS: The Nutrient FCM is initialised at the observed
@@ -294,18 +294,18 @@ recovery. If simulated DO rises and nutrients decline after the
 event, the causal structure is plausible.
 
 ------------------------------------------------------------
-Figure 20 — 20_dieoff_comparison.png
+Figure 20  - 20_dieoff_comparison.png
 ------------------------------------------------------------
 TYPE: Grouped bar chart comparing both events
 WHAT IT SHOWS: Side-by-side bar chart of Z-scores for all features
 at both event months. Features where the two events diverge most
 are the ones that distinguish the two die-off mechanisms.
 PURPOSE: Summarises the mechanistic differences between the two
-events at a glance — Sept 2021 (salinity crash/hypoxia) vs.
+events at a glance  - Sept 2021 (salinity crash/hypoxia) vs.
 Oct 2022 (nutrient-loaded discharge/widespread hypoxia).
 
 ========================================================================
-SECTION 5 — FCM VALIDATION (FIGURES 21–24)
+SECTION 5  - FCM VALIDATION (FIGURES 21–24)
 ========================================================================
 The Nutrient FCM is validated two ways:
   1. One-step-ahead hindcast: plug observed A(t) → predict A(t+1)
@@ -314,7 +314,7 @@ The Nutrient FCM is validated two ways:
      overlay on subsequent observations.
 
 ------------------------------------------------------------
-Figure 21 — 21_fcm_hindcast_scatter.png
+Figure 21  - 21_fcm_hindcast_scatter.png
 ------------------------------------------------------------
 TYPE: Scatter grid (predicted vs. actual, one panel per concept)
 WHAT IT SHOWS: Predicted normalised activations (y-axis) vs.
@@ -344,17 +344,17 @@ indicating the FCM sigmoid compresses predictions toward the mean
 rather than capturing the sharp DO swings seen in the data.
 
 ------------------------------------------------------------
-Figure 22 — 22_fcm_hindcast_timeseries.png
+Figure 22  - 22_fcm_hindcast_timeseries.png
 ------------------------------------------------------------
 TYPE: Time-series overlay (observed vs. FCM-predicted)
 WHAT IT SHOWS: For the 6 most informative concepts (Water Temp,
 Salinity, DO mg/L, DO %Sat, DIN, Chl-a), observed monthly values
 are plotted alongside FCM one-step-ahead predictions.
-PURPOSE: Makes the prediction failure modes visible in time —
+PURPOSE: Makes the prediction failure modes visible in time  -
 whether the FCM is systematically late, biased, or just noisy.
 
 ------------------------------------------------------------
-Figure 23 — 23_fcm_backcast_sept2021.png
+Figure 23  - 23_fcm_backcast_sept2021.png
 ------------------------------------------------------------
 TYPE: Multi-panel time-series (6 concepts × 6 months)
 WHAT IT SHOWS: FCM seeded at September 2021 observed conditions,
@@ -364,7 +364,7 @@ PURPOSE: Tests whether the system was in a 'pre-stressed' state
 that the FCM correctly projects toward die-off conditions.
 
 ------------------------------------------------------------
-Figure 24 — 24_fcm_backcast_oct2022.png
+Figure 24  - 24_fcm_backcast_oct2022.png
 ------------------------------------------------------------
 TYPE: Same as Figure 23 but seeded at August 2022 (2 months before)
 WHAT IT SHOWS: FCM forward simulation from August 2022, covering
@@ -373,7 +373,7 @@ PURPOSE: Tests the Oct 2022 event. A successful backcast would
 show the simulated DIN/NH₄ rising and DO falling toward the event.
 
 ========================================================================
-SECTION 6 — GEOGRAPHIC BUBBLE MAPS: SENSOR STATIONS (FIGURES 25–29)
+SECTION 6  - GEOGRAPHIC BUBBLE MAPS: SENSOR STATIONS (FIGURES 25–29)
 ========================================================================
 These figures show the 7 continuous sensor stations on a CartoDB
 Positron satellite basemap, with bubble colour = observed median
@@ -381,22 +381,22 @@ value. ONLY genuinely observed values are used (imputed rows are
 masked out). Grey bubbles = no observed data in that season.
 
 ------------------------------------------------------------
-Figures 25–28 — 25_map_seasonal_*.png  (4 figures)
+Figures 25–28  - 25_map_seasonal_*.png  (4 figures)
 ------------------------------------------------------------
 TYPE: Grid of geographic bubble maps (rows=years, cols=4 seasons)
 WHAT IT SHOWS: Seasonal median of each variable at each of the 7
 sensor stations. Four separate figures, one per variable:
-  25: Water Temperature (°C)   — RdYlBu_r colourmap
-  26: Salinity (PPT)           — YlOrBr colourmap
-  27: Dissolved Oxygen (mg/L)  — RdYlGn colourmap
-  28: Turbidity (FNU)          — YlOrRd colourmap
+  25: Water Temperature (°C)    - RdYlBu_r colourmap
+  26: Salinity (PPT)            - YlOrBr colourmap
+  27: Dissolved Oxygen (mg/L)   - RdYlGn colourmap
+  28: Turbidity (FNU)           - YlOrRd colourmap
 YEARS COVERED: 2025 and 2026 (continuous sensor deployment period)
 PURPOSE: Shows seasonal and inter-annual variation at each station
 location on the actual bay geography. Easy to spot which stations
 are warmer/fresher/more hypoxic in summer vs. winter.
 
 ------------------------------------------------------------
-Figure 29 — 29_map_annual_overview.png
+Figure 29  - 29_map_annual_overview.png
 ------------------------------------------------------------
 TYPE: 2×2 panel annual overview (each quadrant = one variable)
 WHAT IT SHOWS: Within each quadrant, one small map per year (2025,
@@ -406,7 +406,7 @@ PURPOSE: Year-over-year comparison of all four variables side-by-
 side in a single figure. Quick health-status snapshot.
 
 ========================================================================
-SECTION 7 — EXTENDED MAPS: 2021–2026 COMBINED (FIGURES 30–36)
+SECTION 7  - EXTENDED MAPS: 2021–2026 COMBINED (FIGURES 30–36)
 ========================================================================
 These figures combine:
   2021-2024: Bi-monthly grab-sample data from 20 sites (circles ◯)
@@ -416,13 +416,13 @@ Value labels are printed on 5 key sites: LR01, MR01, GOC-014,
 BB14, BB25 to allow direct numerical comparison.
 
 ------------------------------------------------------------
-Figures 30–32 — 30_map_ext_*.png  (3 figures)
+Figures 30–32  - 30_map_ext_*.png  (3 figures)
 ------------------------------------------------------------
 TYPE: 2-row × 6-column seasonal grid (Summer/Winter × 2021-2026)
 WHAT IT SHOWS: The three variables available in both datasets:
   30: Water Temperature (°C)
-  31: Salinity (PPT) — freshwater pulses visible at canal sites
-  32: Dissolved Oxygen (mg/L) — hypoxia risk at canal mouths
+  31: Salinity (PPT)  - freshwater pulses visible at canal sites
+  32: Dissolved Oxygen (mg/L)  - hypoxia risk at canal mouths
 Grab-sample sites (20 sites) cover the southern bay; sensor
 stations (7 nodes) cover the northern and central bay.
 WHAT TO LOOK FOR: Summer salinity depression at LR01/MR01 (canal
@@ -430,13 +430,13 @@ sites) vs. recovery in winter; summer DO suppression at canal
 outfall sites vs. normal DO in open-bay sites.
 
 ------------------------------------------------------------
-Figures 33–35 — 33_map_nutrient_*.png  (3 figures)
+Figures 33–35  - 33_map_nutrient_*.png  (3 figures)
 ------------------------------------------------------------
 TYPE: 2-row × 4-column seasonal grid (Summer/Winter × 2021-2024)
 WHAT IT SHOWS: Nutrient variables only available in grab samples:
-  33: pH              — RdYlGn; canal sites typically lower pH
-  34: Chlorophyll-a (µg/L) — YlGn; algal bloom indicator
-  35: DIN (µmol/L dissolved inorganic nitrogen) — YlOrRd
+  33: pH               - RdYlGn; canal sites typically lower pH
+  34: Chlorophyll-a (µg/L)  - YlGn; algal bloom indicator
+  35: DIN (µmol/L dissolved inorganic nitrogen)  - YlOrRd
 All 20 grab-sample sites shown. Annotation box identifies canal
 sites (LR01, MR01, GOC-014) vs. open-bay sites (BB14, BB25).
 WHAT TO LOOK FOR: Summer peaks in Chl-a at northern sites;
@@ -444,7 +444,7 @@ GOC outfall sites showing highest DIN; pH drops co-occurring with
 high DIN (nitrogen-loaded water is more acidic).
 
 ------------------------------------------------------------
-Figure 36 — 36_map_canal_stress.png
+Figure 36  - 36_map_canal_stress.png
 ------------------------------------------------------------
 TYPE: Annual 2-column map grid (left=NH₄, right=DO%) rows=years
 WHAT IT SHOWS: NH₄ (ammonium) and DO saturation (%) at all 20
@@ -455,14 +455,14 @@ NH₄ + low DO% at the same sites = hypoxic/ammonium-stressed zone.
 Canal and outfall sites (coloured edges) should stand out each year.
 SITE TYPES AND EDGE COLOURS:
   Blue    = Biscayne Bay open-water sites (background reference)
-  Red     = Little River Canal (LR01) — primary urban canal
+  Red     = Little River Canal (LR01)  - primary urban canal
   Pink    = Miami Canal (MR01)
   Orange  = Inlet sites (GOC-001 to GOC-004)
   Purple  = Outfall sites (GOC-011 to GOC-015)
   Green   = Reef sites (GOC-006, GOC-011)
 
 ========================================================================
-APPENDIX — MODEL & DATA QUICK-REFERENCE
+APPENDIX  - MODEL & DATA QUICK-REFERENCE
 ========================================================================
 
 ------------------------------------------------------------

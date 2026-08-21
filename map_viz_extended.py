@@ -5,13 +5,13 @@ Extended geographic maps combining 2021-2024 grab-sample sites with
 2025-2026 continuous sensor stations across Biscayne Bay.
 
 Adds figures 30-36 to visualizations/:
-  30_map_ext_temp.png       — Water temp 2021-2026, all sites seasonal
-  31_map_ext_sal.png        — Salinity 2021-2026, all sites seasonal
-  32_map_ext_do.png         — DO (mg/L) 2021-2026, all sites seasonal
-  33_map_nutrient_ph.png    — pH 2021-2024 (grab sites), seasonal
-  34_map_nutrient_chl.png   — Chlorophyll-a 2021-2024, seasonal
-  35_map_nutrient_din.png   — DIN 2021-2024, seasonal
-  36_map_canal_stress.png   — Annual median NH4 + DO by site type (canal vs. bay)
+  30_map_ext_temp.png        - Water temp 2021-2026, all sites seasonal
+  31_map_ext_sal.png         - Salinity 2021-2026, all sites seasonal
+  32_map_ext_do.png          - DO (mg/L) 2021-2026, all sites seasonal
+  33_map_nutrient_ph.png     - pH 2021-2024 (grab sites), seasonal
+  34_map_nutrient_chl.png    - Chlorophyll-a 2021-2024, seasonal
+  35_map_nutrient_din.png    - DIN 2021-2024, seasonal
+  36_map_canal_stress.png    - Annual median NH4 + DO by site type (canal vs. bay)
 
 Run:
     python map_viz_extended.py
@@ -87,6 +87,7 @@ SITE_TYPE_COLOR = {
 def load_grabs() -> pd.DataFrame:
     df = pd.read_csv(GRAB_CSV, encoding="latin-1")
     df = df[df["sample_type"] == "Surface"].copy()
+    df = df[~df["site_type"].isin({"Inlet", "Reef", "Outfall"})].copy()  # bay-interior only
     df["date"]  = pd.to_datetime(df["date"])
     df["year"]  = df["date"].dt.year
     df["month"] = df["date"].dt.month
@@ -242,47 +243,46 @@ def plot_combined_seasonal(grabs: pd.DataFrame, fig_start=30):
         bounds = _bounds(all_lons, all_lats)
 
         years = sorted(set(grab_agg["year"].unique()) | set(sensor_agg["year"].unique()))
-        years = [y for y in years if 2021 <= y <= 2026]
+        years = [y for y in years if 2022 <= y <= 2026]
         n_years = len(years)
 
-        # 2 rows (seasons) × N columns (years) — landscape, panels are larger
+        # N rows (years) x 4 cols (seasons) - matches style of figures 25-28
         fig, axes = plt.subplots(
-            2, n_years,
-            figsize=(n_years * 3.6, 2 * 4.4),
+            n_years, 4,
+            figsize=(4 * 3.6, n_years * 4.4),
             constrained_layout=False,
         )
+        if n_years == 1:
+            axes = axes[np.newaxis, :]
         fig.subplots_adjust(wspace=0.04, hspace=0.12,
                             left=0.04, right=0.88, top=0.90, bottom=0.04)
 
         norm = mcolors.Normalize(vmin=cfg["vmin"], vmax=cfg["vmax"])
         cmap = plt.get_cmap(cfg["cmap"])
 
-        for ci, yr in enumerate(years):
-            for ri, ss in enumerate(KEY_SEASONS):
+        for ri, yr in enumerate(years):
+            for ci, ss in enumerate(SEASON_ORDER):
                 ax = axes[ri, ci]
                 _add_basemap(ax, bounds)
 
-                # Grab sites — circles
+                # Grab sites  - circles
                 g = grab_agg[(grab_agg["year"] == yr) & (grab_agg["season"] == ss)]
                 if not g.empty:
                     _plot_bubbles(ax, g, cfg, marker="o", size=260, edgewidth=1.0)
                     _annotate_values(ax, g, cfg)
 
-                # Sensor stations — diamonds (larger, on top)
+                # Sensor stations  - diamonds (larger, on top)
                 s = sensor_agg[(sensor_agg["year"] == yr) & (sensor_agg["season"] == ss)]
                 if not s.empty:
                     _plot_bubbles(ax, s, cfg, marker="D", size=360, edgewidth=2.0)
 
-                # Column header (year) on top row only
+                # Season header on top row; year label on leftmost column
                 if ri == 0:
-                    ax.set_title(str(yr), fontsize=11, fontweight="bold", pad=5)
-                # Row label (season) on leftmost column only
+                    ax.set_title(ss, fontsize=10, fontweight="bold", pad=5)
                 if ci == 0:
-                    ax.set_ylabel(ss.replace(" (", "\n("), fontsize=9,
-                                  fontweight="bold", labelpad=4)
+                    ax.set_ylabel(str(yr), fontsize=10, fontweight="bold", labelpad=4)
                 ax.set_xticks([]); ax.set_yticks([])
 
-                # Grey overlay when no data at all
                 if g.empty and s.empty:
                     ax.text(0.5, 0.5, "no data", transform=ax.transAxes,
                             ha="center", va="center", fontsize=9, color="#888")
@@ -307,8 +307,8 @@ def plot_combined_seasonal(grabs: pd.DataFrame, fig_start=30):
                    bbox_to_anchor=(0.45, -0.02))
 
         fig.suptitle(
-            f"Biscayne Bay — {cfg['label']} · 2021–2026\n"
-            "Columns = year  |  Rows = season  |  ◯ grab samples  ◆ sensors",
+            f"Biscayne Bay  - {cfg['label']} - 2022-2026\n"
+            "Rows = year  |  Columns = season  |  o grab samples  D sensors",
             fontsize=12, fontweight="bold",
         )
 
@@ -334,27 +334,29 @@ def plot_nutrient_seasonal(grabs: pd.DataFrame, fig_start=33):
     all_lats = list(grabs["lat"].dropna())
     bounds   = _bounds(all_lons, all_lats, pad_lon=0.07, pad_lat=0.05)
 
-    # Only grab years (2021-2024; Dec-corrected 2025 excluded)
-    years = [y for y in sorted(grabs["year"].unique()) if y <= 2024]
+    # Only grab years 2022-2025 (2021 is sparse; 2025 Winter from Dec 2024 grabs)
+    years = [y for y in sorted(grabs["year"].unique()) if 2022 <= y <= 2025]
     n_years = len(years)
 
     for fig_idx, (grab_col, cfg) in enumerate(NUTRIENT_VARS.items()):
         g_agg = agg_grabs(grabs, grab_col)
 
-        # 2 rows (Summer / Winter) × N columns (years)
+        # N rows (years) x 4 cols (seasons)
         fig, axes = plt.subplots(
-            2, n_years,
-            figsize=(n_years * 3.8, 2 * 4.6),
+            n_years, 4,
+            figsize=(4 * 3.8, n_years * 4.6),
             constrained_layout=False,
         )
+        if n_years == 1:
+            axes = axes[np.newaxis, :]
         fig.subplots_adjust(wspace=0.04, hspace=0.12,
                             left=0.06, right=0.88, top=0.90, bottom=0.04)
 
         norm = mcolors.Normalize(vmin=cfg["vmin"], vmax=cfg["vmax"])
         cmap = plt.get_cmap(cfg["cmap"])
 
-        for ci, yr in enumerate(years):
-            for ri, ss in enumerate(KEY_SEASONS):
+        for ri, yr in enumerate(years):
+            for ci, ss in enumerate(SEASON_ORDER):
                 ax = axes[ri, ci]
                 _add_basemap(ax, bounds)
 
@@ -367,10 +369,9 @@ def plot_nutrient_seasonal(grabs: pd.DataFrame, fig_start=33):
                             ha="center", va="center", fontsize=9, color="#888")
 
                 if ri == 0:
-                    ax.set_title(str(yr), fontsize=11, fontweight="bold", pad=5)
+                    ax.set_title(ss, fontsize=10, fontweight="bold", pad=5)
                 if ci == 0:
-                    ax.set_ylabel(ss.replace(" (", "\n("), fontsize=9,
-                                  fontweight="bold", labelpad=4)
+                    ax.set_ylabel(str(yr), fontsize=10, fontweight="bold", labelpad=4)
                 ax.set_xticks([]); ax.set_yticks([])
 
         cbar_ax = fig.add_axes([0.90, 0.10, 0.018, 0.78])
@@ -387,8 +388,8 @@ def plot_nutrient_seasonal(grabs: pd.DataFrame, fig_start=33):
                  bbox=dict(boxstyle="round,pad=0.4", fc="white", alpha=0.7, lw=0.5))
 
         fig.suptitle(
-            f"Biscayne Bay — {cfg['label']} · 2021–2024\n"
-            "Grab-sample sites (surface)  |  Columns = year  |  Rows = season",
+            f"Biscayne Bay  - {cfg['label']} · 2021–2024\n"
+            "Grab-sample sites (surface)  |  Rows = year  |  Columns = season",
             fontsize=12, fontweight="bold",
         )
 
@@ -399,7 +400,7 @@ def plot_nutrient_seasonal(grabs: pd.DataFrame, fig_start=33):
 
 
 # ---------------------------------------------------------------------------
-# Figure 36: Annual NH4 + DO stress — canal / bay / outfall comparison
+# Figure 36: Annual NH4 + DO stress  - canal / bay / outfall comparison
 # ---------------------------------------------------------------------------
 
 def plot_canal_stress(grabs: pd.DataFrame):
@@ -411,7 +412,7 @@ def plot_canal_stress(grabs: pd.DataFrame):
     all_lats = list(grabs["lat"].dropna())
     bounds   = _bounds(all_lons, all_lats, pad_lon=0.08, pad_lat=0.05)
 
-    years = sorted(grabs["year"].unique())
+    years = [y for y in sorted(grabs["year"].unique()) if y <= 2025]
 
     panels = [
         ("nh4",    {"label": "NH₄ (µmol/L)",  "cmap": "YlOrRd", "vmin": 0, "vmax": 25}),
@@ -468,7 +469,7 @@ def plot_canal_stress(grabs: pd.DataFrame):
                fontsize=8, framealpha=0.8, bbox_to_anchor=(0.5, -0.02))
 
     fig.suptitle(
-        "Biscayne Bay — Annual Hypoxia Stress Indicators (2021–2024)\n"
+        "Biscayne Bay  - Annual Hypoxia Stress Indicators (2021–2024)\n"
         "Fill colour = value  |  Edge colour = site type",
         fontsize=11, fontweight="bold", y=1.01,
     )
@@ -478,6 +479,84 @@ def plot_canal_stress(grabs: pd.DataFrame):
     fig.savefig(out, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"  saved → {out}")
+
+
+# ---------------------------------------------------------------------------
+# Figures 37-39: grab-sample-only seasonal maps for physical variables
+# ---------------------------------------------------------------------------
+
+GRAB_PHYSICAL_VARS = {
+    "temp":   {"label": "Water Temp (°C)",  "cmap": "RdYlBu_r", "vmin": 18, "vmax": 34},
+    "sal":    {"label": "Salinity (PPT)",    "cmap": "YlOrBr",   "vmin": 10, "vmax": 38},
+    "do_mgL": {"label": "DO (mg/L)",         "cmap": "RdYlGn",   "vmin": 2,  "vmax": 10},
+}
+
+
+def plot_grab_physical_seasonal(grabs: pd.DataFrame, fig_start=37):
+    """Same layout as plot_nutrient_seasonal but for physical grab variables."""
+    all_lons = list(grabs["lon"].dropna())
+    all_lats = list(grabs["lat"].dropna())
+    bounds   = _bounds(all_lons, all_lats, pad_lon=0.07, pad_lat=0.05)
+
+    years = [y for y in sorted(grabs["year"].unique()) if 2022 <= y <= 2025]
+
+    for fig_idx, (grab_col, cfg) in enumerate(GRAB_PHYSICAL_VARS.items()):
+        g_agg = agg_grabs(grabs, grab_col)
+
+        fig, axes = plt.subplots(
+            len(years), 4,
+            figsize=(4 * 3.8, len(years) * 4.6),
+            constrained_layout=False,
+        )
+        if len(years) == 1:
+            axes = axes[np.newaxis, :]
+        fig.subplots_adjust(wspace=0.04, hspace=0.12,
+                            left=0.06, right=0.88, top=0.90, bottom=0.04)
+
+        norm = mcolors.Normalize(vmin=cfg["vmin"], vmax=cfg["vmax"])
+        cmap = plt.get_cmap(cfg["cmap"])
+
+        for ri, yr in enumerate(years):
+            for ci, ss in enumerate(SEASON_ORDER):
+                ax = axes[ri, ci]
+                _add_basemap(ax, bounds)
+
+                g = g_agg[(g_agg["year"] == yr) & (g_agg["season"] == ss)]
+                if not g.empty:
+                    _plot_bubbles(ax, g, cfg, marker="o", size=310, edgewidth=1.2)
+                    _annotate_values(ax, g, cfg, fontsize=7)
+                else:
+                    ax.text(0.5, 0.5, "no data", transform=ax.transAxes,
+                            ha="center", va="center", fontsize=9, color="#888")
+
+                if ri == 0:
+                    ax.set_title(ss, fontsize=10, fontweight="bold", pad=5)
+                if ci == 0:
+                    ax.set_ylabel(str(yr), fontsize=10, fontweight="bold", labelpad=4)
+                ax.set_xticks([]); ax.set_yticks([])
+
+        cbar_ax = fig.add_axes([0.90, 0.10, 0.018, 0.78])
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        cb = fig.colorbar(sm, cax=cbar_ax)
+        cb.set_label(cfg["label"], fontsize=10, labelpad=8)
+        cb.ax.tick_params(labelsize=8)
+
+        fig.text(0.01, 0.50,
+                 "Canal sites:\nLR01 - MR01\n\nBay sites:\nBB14 - BB25",
+                 fontsize=7.5, va="center", color="#444",
+                 bbox=dict(boxstyle="round,pad=0.4", fc="white", alpha=0.7, lw=0.5))
+
+        fig.suptitle(
+            f"Biscayne Bay  - {cfg['label']} - 2022-2025\n"
+            "Grab-sample sites (surface)  |  Rows = year  |  Columns = season",
+            fontsize=12, fontweight="bold",
+        )
+
+        out = OUT_DIR / f"{fig_start + fig_idx:02d}_map_grab_{grab_col}.png"
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"  saved → {out}")
 
 
 # ---------------------------------------------------------------------------
@@ -499,4 +578,7 @@ if __name__ == "__main__":
     print("\nGenerating canal hypoxia stress map (NH4 + DO)...")
     plot_canal_stress(grabs)
 
-    print(f"\nDone — figures 30-36 saved to {OUT_DIR}/")
+    print("\nGenerating grab-sample physical seasonal maps (temp, sal, DO 2021-2024)...")
+    plot_grab_physical_seasonal(grabs, fig_start=37)
+
+    print(f"\nDone  - figures 30-39 saved to {OUT_DIR}/")

@@ -71,7 +71,7 @@ def load_all():
 
 
 # ---------------------------------------------------------------------------
-# Plot 1: Time-series overview — one panel per feature, all nodes overlaid
+# Plot 1: Time-series overview  - one panel per feature, all nodes overlaid
 # ---------------------------------------------------------------------------
 
 def plot_timeseries_overview(nodes: dict):
@@ -106,7 +106,7 @@ def plot_timeseries_overview(nodes: dict):
     fig.legend(handles, labels, loc="upper center", ncol=6,
                fontsize=9, frameon=True, bbox_to_anchor=(0.5, 0.98))
     fig.autofmt_xdate(rotation=30)
-    fig.suptitle("All Stations — Imputed Sensor Time Series\n(2025-03 to 2026-06)",
+    fig.suptitle("All Stations  - Imputed Sensor Time Series\n(2025-03 to 2026-06)",
                  y=1.00, fontsize=13)
     plt.tight_layout(rect=[0, 0, 1, 0.97])
 
@@ -200,7 +200,7 @@ def plot_channel_importance():
 
 
 # ---------------------------------------------------------------------------
-# Plot 4: Spatial graph — nodes on map with attention-weighted edges
+# Plot 4: Spatial graph  - nodes on map with attention-weighted edges
 # ---------------------------------------------------------------------------
 
 def plot_spatial_graph():
@@ -253,7 +253,7 @@ def plot_spatial_graph():
 
     ax.set_xlabel("Longitude", fontsize=9)
     ax.set_ylabel("Latitude", fontsize=9)
-    ax.set_title("Station Graph — GAT Attention Weights\n"
+    ax.set_title("Station Graph  - GAT Attention Weights\n"
                  "(arrow thickness = attention strength, tgt ← src)", fontsize=11)
     ax.grid(True, lw=0.3, alpha=0.4)
     plt.tight_layout()
@@ -336,7 +336,7 @@ def plot_node_detail(nodes: dict):
         axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
         axes[-1].xaxis.set_major_locator(mdates.MonthLocator(interval=1))
         fig.autofmt_xdate(rotation=30)
-        fig.suptitle(f"Station: {name} — Observed (blue) with Imputed Regions (orange shading)",
+        fig.suptitle(f"Station: {name}  - Observed (blue) with Imputed Regions (orange shading)",
                      fontsize=11)
         plt.tight_layout()
 
@@ -406,4 +406,4 @@ if __name__ == "__main__":
     plot_node_detail(nodes)
     plot_monthly_salinity(nodes)
 
-    print(f"\nDone — {len(list(OUT_DIR.glob('*.png')))} figures in {OUT_DIR}/")
+    print(f"\nDone  - {len(list(OUT_DIR.glob('*.png')))} figures in {OUT_DIR}/")

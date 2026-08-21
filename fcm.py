@@ -38,16 +38,16 @@ Run:
 
 Outputs
 ───────
-  analysis/fcm_weights_physical.csv   — 11×11 physical FCM weights
-  analysis/fcm_weights_nutrient.csv   — 16×16 nutrient FCM weights
-  visualizations/08_fcm_heatmap.png        — physical FCM heatmap
-  visualizations/09_fcm_graph.png          — physical FCM causal network
-  visualizations/10_fcm_scenarios.png      — physical FCM scenarios
+  analysis/fcm_weights_physical.csv    - 11×11 physical FCM weights
+  analysis/fcm_weights_nutrient.csv    - 16×16 nutrient FCM weights
+  visualizations/08_fcm_heatmap.png         - physical FCM heatmap
+  visualizations/09_fcm_graph.png           - physical FCM causal network
+  visualizations/10_fcm_scenarios.png       - physical FCM scenarios
   visualizations/11_fcm_influence_ranking.png
-  visualizations/12_fcm_nutrient_heatmap.png   — nutrient FCM heatmap
-  visualizations/13_fcm_nutrient_graph.png     — nutrient FCM causal network
-  visualizations/14_fcm_nutrient_scenarios.png — nutrient FCM scenarios
-  visualizations/15_fcm_comparison.png         — side-by-side FCM comparison
+  visualizations/12_fcm_nutrient_heatmap.png    - nutrient FCM heatmap
+  visualizations/13_fcm_nutrient_graph.png      - nutrient FCM causal network
+  visualizations/14_fcm_nutrient_scenarios.png  - nutrient FCM scenarios
+  visualizations/15_fcm_comparison.png          - side-by-side FCM comparison
 """
 
 import numpy as np
@@ -69,7 +69,7 @@ ANALYSIS_DIR.mkdir(exist_ok=True)
 VIZ_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# Physical FCM — 11 concepts  (daily, 2025-2026)
+# Physical FCM  - 11 concepts  (daily, 2025-2026)
 # ---------------------------------------------------------------------------
 FORCING_CONCEPTS  = ["net_water", "temp_min", "temp_max"]
 SENSOR_CONCEPTS   = list(ALL_FEATURES)                  # 8 features
@@ -80,7 +80,7 @@ N_FORCING = len(FORCING_CONCEPTS)
 N_SENSOR  = len(SENSOR_CONCEPTS)
 
 # ---------------------------------------------------------------------------
-# Nutrient FCM — 16 concepts  (monthly, 2021-2026)
+# Nutrient FCM  - 16 concepts  (monthly, 2021-2026)
 # ---------------------------------------------------------------------------
 NUTRIENT_EXTRA   = ["ph", "chl_a_ugL", "secchi_m", "no2no3_umolL", "din_umolL"]
 NUTR_CONCEPTS    = PHYS_CONCEPTS + NUTRIENT_EXTRA       # 16
@@ -121,7 +121,7 @@ IMPUTED_FILES = {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Data loading — Physical FCM (daily, 2025-2026)
+# 1. Data loading  - Physical FCM (daily, 2025-2026)
 # ---------------------------------------------------------------------------
 
 def load_physical_concept_timeseries() -> pd.DataFrame:
@@ -183,7 +183,7 @@ def load_physical_concept_timeseries() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# 1b. Data loading — Nutrient FCM (monthly, 2021-2026)
+# 1b. Data loading  - Nutrient FCM (monthly, 2021-2026)
 # ---------------------------------------------------------------------------
 
 def load_nutrient_concept_timeseries() -> pd.DataFrame:
@@ -335,7 +335,7 @@ def select_optimal_lag(
         best = min(scores, key=scores.get)
 
     score_str = "  ".join(f"lag={k}: {v:.4f}" for k, v in sorted(scores.items()))
-    print(f"  [{tag}] Lag selection — {score_str}")
+    print(f"  [{tag}] Lag selection  - {score_str}")
     print(f"  [{tag}] → best lag = {best}")
     return best
 
@@ -354,10 +354,10 @@ def learn_fcm_weights(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Returns:
-      W          — (C, C) float; W[i,j] = influence of concept i on j
-      arr_norm   — (T, C) min-max normalised values  [0, 1]
-      col_min    — (C,) per-concept minimum
-      col_range  — (C,) per-concept range
+      W           - (C, C) float; W[i,j] = influence of concept i on j
+      arr_norm    - (T, C) min-max normalised values  [0, 1]
+      col_min     - (C,) per-concept minimum
+      col_range   - (C,) per-concept range
 
     Rows/columns with >50% NaN in the time series are excluded from the
     regression (nutrient columns that only exist in one period).
@@ -398,7 +398,7 @@ def learn_fcm_weights(
             continue
         W[:, j] = _ridge(X_lag, Y_lag[:, j], alpha=alpha)
 
-    # Forcing concepts are exogenous — zero their incoming edges
+    # Forcing concepts are exogenous  - zero their incoming edges
     W[:, :n_forcing] = 0.0
 
     # Normalise to [-1, 1]
@@ -406,7 +406,7 @@ def learn_fcm_weights(
     if abs_max > 0:
         W = W / abs_max
 
-    header = f"\n=== FCM weights ({tag}) — lag={lag} ===\n"
+    header = f"\n=== FCM weights ({tag})  - lag={lag} ===\n"
     print(header + f"  {'SOURCE':<22} → {'TARGET':<22}  WEIGHT")
     print("  " + "-" * 56)
     edges = sorted(
@@ -454,7 +454,7 @@ def fcm_simulate(
 
 
 # ---------------------------------------------------------------------------
-# 5a. Visualisation — heatmap  (generic)
+# 5a. Visualisation  - heatmap  (generic)
 # ---------------------------------------------------------------------------
 
 def plot_heatmap(
@@ -462,7 +462,7 @@ def plot_heatmap(
     concept_list: list[str],
     n_forcing:    int,
     out_path:     Path,
-    title:        str = "FCM — Causal Influence Matrix",
+    title:        str = "FCM  - Causal Influence Matrix",
 ) -> None:
     C      = len(concept_list)
     labels = [CONCEPT_LABELS.get(c, c) for c in concept_list]
@@ -512,7 +512,7 @@ def plot_heatmap(
 
 
 # ---------------------------------------------------------------------------
-# 5b. Visualisation — circular causal graph  (generic)
+# 5b. Visualisation  - circular causal graph  (generic)
 # ---------------------------------------------------------------------------
 
 def plot_causal_graph(
@@ -521,7 +521,7 @@ def plot_causal_graph(
     n_forcing:    int,
     out_path:     Path,
     threshold:    float = 0.07,
-    title:        str   = "FCM — Causal Network",
+    title:        str   = "FCM  - Causal Network",
 ) -> None:
     C        = len(concept_list)
     labels   = [CONCEPT_LABELS.get(c, c) for c in concept_list]
@@ -606,7 +606,7 @@ def plot_causal_graph(
 
 
 # ---------------------------------------------------------------------------
-# 5c. Visualisation — scenario simulations  (generic)
+# 5c. Visualisation  - scenario simulations  (generic)
 # ---------------------------------------------------------------------------
 
 def plot_scenarios(
@@ -664,7 +664,7 @@ def plot_scenarios(
 
 
 # ---------------------------------------------------------------------------
-# 5d. Visualisation — influence ranking  (generic)
+# 5d. Visualisation  - influence ranking  (generic)
 # ---------------------------------------------------------------------------
 
 def plot_influence_ranking(
@@ -725,7 +725,7 @@ def plot_influence_ranking(
 
 
 # ---------------------------------------------------------------------------
-# 5e. Visualisation — side-by-side FCM comparison  (shared sensor concepts)
+# 5e. Visualisation  - side-by-side FCM comparison  (shared sensor concepts)
 # ---------------------------------------------------------------------------
 
 def plot_fcm_comparison(
@@ -772,7 +772,7 @@ def plot_fcm_comparison(
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
                      label="Causal weight W[src→tgt]")
 
-    fig.suptitle("FCM Comparison — Shared Physical Concepts\n"
+    fig.suptitle("FCM Comparison  - Shared Physical Concepts\n"
                  "Left: daily resolution  |  Right: extended monthly (2021–2026) with nutrients",
                  fontsize=12, fontweight="bold")
     plt.tight_layout()
@@ -850,16 +850,16 @@ def main() -> None:
     print("\n[Physical FCM] Generating visualisations...")
     plot_heatmap(W_phys, PHYS_CONCEPTS, N_FORCING,
                  VIZ_DIR / "08_fcm_heatmap.png",
-                 title="Physical FCM — Causal Influence (daily 2025–2026)")
+                 title="Physical FCM  - Causal Influence (daily 2025–2026)")
     plot_causal_graph(W_phys, PHYS_CONCEPTS, N_FORCING,
                       VIZ_DIR / "09_fcm_graph.png",
-                      title="Physical FCM — Biscayne Bay Water Quality")
+                      title="Physical FCM  - Biscayne Bay Water Quality")
     plot_scenarios(W_phys, PHYS_CONCEPTS, N_FORCING, baseline_phys,
                    VIZ_DIR / "10_fcm_scenarios.png",
-                   step_label="days", title_suffix=" — Physical FCM (2025–2026)")
+                   step_label="days", title_suffix="  - Physical FCM (2025–2026)")
     plot_influence_ranking(W_phys, PHYS_CONCEPTS, N_FORCING,
                            VIZ_DIR / "11_fcm_influence_ranking.png",
-                           title="Physical FCM Influence Rankings — Biscayne Bay")
+                           title="Physical FCM Influence Rankings  - Biscayne Bay")
 
     # =====================================================================
     # B. Nutrient FCM  (monthly, 2021-2026, 16 concepts)
@@ -895,16 +895,16 @@ def main() -> None:
     print("\n[Nutrient FCM] Generating visualisations...")
     plot_heatmap(W_nutr, NUTR_CONCEPTS, N_FORCING,
                  VIZ_DIR / "12_fcm_nutrient_heatmap.png",
-                 title="Nutrient FCM — Causal Influence (monthly 2021–2026)")
+                 title="Nutrient FCM  - Causal Influence (monthly 2021–2026)")
     plot_causal_graph(W_nutr, NUTR_CONCEPTS, N_FORCING,
                       VIZ_DIR / "13_fcm_nutrient_graph.png",
-                      title="Nutrient FCM — Biscayne Bay 2021–2026")
+                      title="Nutrient FCM  - Biscayne Bay 2021–2026")
     plot_scenarios(W_nutr, NUTR_CONCEPTS, N_FORCING, baseline_nutr,
                    VIZ_DIR / "14_fcm_nutrient_scenarios.png",
-                   step_label="months", title_suffix=" — Nutrient FCM (2021–2026)")
+                   step_label="months", title_suffix="  - Nutrient FCM (2021–2026)")
     plot_influence_ranking(W_nutr, NUTR_CONCEPTS, N_FORCING,
                            VIZ_DIR / "15_fcm_nutrient_ranking.png",
-                           title="Nutrient FCM Influence Rankings — 2021–2026")
+                           title="Nutrient FCM Influence Rankings  - 2021–2026")
 
     # =====================================================================
     # C. Side-by-side comparison of shared concepts

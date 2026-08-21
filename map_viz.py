@@ -4,11 +4,11 @@ map_viz.py
 Geographic bubble-map visualisations of imputed sensor data over North Biscayne Bay.
 
 Produces four figures saved to visualizations/:
-  25_map_seasonal_temp.png      — Water temperature, seasonal medians by year
-  26_map_seasonal_sal.png       — Salinity, seasonal medians by year
-  27_map_seasonal_do.png        — Dissolved oxygen (mg/L), seasonal medians by year
-  28_map_seasonal_turb.png      — Turbidity (FNU), seasonal medians by year
-  29_map_annual_overview.png    — Annual median for all four variables side-by-side
+  25_map_seasonal_temp.png       - Water temperature, seasonal medians by year
+  26_map_seasonal_sal.png        - Salinity, seasonal medians by year
+  27_map_seasonal_do.png         - Dissolved oxygen (mg/L), seasonal medians by year
+  28_map_seasonal_turb.png       - Turbidity (FNU), seasonal medians by year
+  29_map_annual_overview.png     - Annual median for all four variables side-by-side
 
 Run:
     python map_viz.py
@@ -226,13 +226,15 @@ def plot_seasonal_maps(agg_df: pd.DataFrame):
 
                 ax.set_xticks([]); ax.set_yticks([])
 
-        # shared colorbar
+        plt.tight_layout(rect=[0, 0, 0.88, 0.97])
+        fig.subplots_adjust(right=0.88)
+        cbar_ax = fig.add_axes([0.905, 0.15, 0.018, 0.70])
         norm = mcolors.Normalize(vmin=cfg["vmin"], vmax=cfg["vmax"])
         sm   = plt.cm.ScalarMappable(cmap=plt.get_cmap(cfg["cmap"]), norm=norm)
         sm.set_array([])
-        cbar = fig.colorbar(sm, ax=axes, orientation="vertical",
-                            fraction=0.02, pad=0.02, shrink=0.8)
+        cbar = fig.colorbar(sm, cax=cbar_ax)
         cbar.set_label(cfg["label"], fontsize=9)
+        cbar.ax.tick_params(labelsize=8)
 
         # grey patch legend for missing
         grey_patch = mpatches.Patch(facecolor="lightgrey", edgecolor="white",
@@ -240,10 +242,9 @@ def plot_seasonal_maps(agg_df: pd.DataFrame):
         fig.legend(handles=[grey_patch], loc="lower left",
                    fontsize=8, framealpha=0.7)
 
-        fig.suptitle(f"North Biscayne Bay — {cfg['label']}\nSeasonal medians"
+        fig.suptitle(f"North Biscayne Bay  - {cfg['label']}\nSeasonal medians"
                      " (observed values only, grey = no data)",
-                     fontsize=11, fontweight="bold", y=1.01)
-        plt.tight_layout()
+                     fontsize=11, fontweight="bold", y=1.00)
 
         idx = list(VARIABLES).index(var) + 25
         out = OUT_DIR / f"{idx:02d}_map_seasonal_{var}.png"
@@ -253,12 +254,12 @@ def plot_seasonal_maps(agg_df: pd.DataFrame):
 
 
 # ---------------------------------------------------------------------------
-# Figure 5: annual overview — 2×2 grid, one panel per variable
+# Figure 5: annual overview  - 2×2 grid, one panel per variable
 # ---------------------------------------------------------------------------
 
 def plot_annual_overview(agg_df: pd.DataFrame):
     annual = agg_df[agg_df["season"] == "Annual"]
-    years  = sorted(annual["year"].unique())
+    years  = [y for y in sorted(annual["year"].unique()) if y <= 2025]
 
     fig, axes = plt.subplots(2, 2, figsize=(13, 11))
     axes = axes.flatten()
@@ -314,7 +315,7 @@ def plot_annual_overview(agg_df: pd.DataFrame):
         fig.colorbar(sm, cax=sub_cbar_ax)
         sub_cbar_ax.tick_params(labelsize=7)
 
-    fig.suptitle("North Biscayne Bay — Annual Median (observed data only)\n"
+    fig.suptitle("North Biscayne Bay  - Annual Median (observed data only)\n"
                  "Bubble colour = measured value at each station",
                  fontsize=12, fontweight="bold", y=1.01)
 
@@ -347,4 +348,4 @@ if __name__ == "__main__":
     print("\nGenerating annual overview map...")
     plot_annual_overview(annual_agg)
 
-    print(f"\nDone — figures saved to {OUT_DIR}/")
+    print(f"\nDone  - figures saved to {OUT_DIR}/")

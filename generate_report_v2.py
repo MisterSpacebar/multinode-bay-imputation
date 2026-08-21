@@ -1,7 +1,7 @@
 """
 generate_report_v2.py
 ---------------------
-Report v2 — every chart/graph replaced by the underlying data table.
+Report v2  - every chart/graph replaced by the underlying data table.
 Writes report/figures_summary_v2.txt
 
 Run:
@@ -131,6 +131,7 @@ def load_grab_seasonal(var, site_types=None):
     """Annual × seasonal median for one grab-sample variable, surface only."""
     df = pd.read_csv(GRAB_CSV, encoding="latin-1")
     df = df[df["sample_type"] == "Surface"].copy()
+    df = df[~df["site_type"].isin({"Inlet", "Reef", "Outfall"})].copy()
     if site_types:
         df = df[df["site_type"].isin(site_types)]
     df["date"]  = pd.to_datetime(df["date"])
@@ -167,21 +168,21 @@ def fcm_edge_table(W_df, top_n=20):
 blocks = []
 A = blocks.append
 
-A("BISCAYNE BAY WATER QUALITY ANALYSIS — FIGURE SUMMARY v2")
+A("BISCAYNE BAY WATER QUALITY ANALYSIS  - FIGURE SUMMARY v2")
 A(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
 A("Tables show the underlying data for every chart and figure.")
 A("=" * 72)
 
 # ============================================================
-A(h1("SECTION 1 — ST-GNN IMPUTATION RESULTS (Figures 01–07)"))
+A(h1("SECTION 1  - ST-GNN IMPUTATION RESULTS (Figures 01–07)"))
 # ============================================================
 
-A(h2("Figure 01 — Time-series overview"))
+A(h2("Figure 01  - Time-series overview"))
 A("Data: hourly-resampled observed + imputed values for temp_c, sal_ppt,")
 A("odo_mgL at all 7 nodes. Imputed regions are shaded orange in the chart.")
-A("No single table — see Figure 06 per-node detail tables below (Sec 1).")
+A("No single table  - see Figure 06 per-node detail tables below (Sec 1).")
 
-A(h2("Figure 02 — Observed vs imputed coverage (% missing per node)"))
+A(h2("Figure 02  - Observed vs imputed coverage (% missing per node)"))
 A("Source: build_dataset() output at last run.\n")
 cov_data = {
     "Node":           ["L0","L1","L2","L6","L7","biscayne_bay","consolidated_crest5"],
@@ -190,7 +191,7 @@ cov_data = {
 }
 A(tbl(pd.DataFrame(cov_data), float_fmt=".1f"))
 
-A(h2("Figure 03 — Channel permutation importance"))
+A(h2("Figure 03  - Channel permutation importance"))
 A("Metric: delta loss = (loss with feature masked) - (baseline loss).")
 A("Negative = masking that feature hurts reconstruction (feature is useful).")
 A("Source: analysis/channel_importance.csv\n")
@@ -199,13 +200,13 @@ ci_disp = ci_disp.sort_values("importance").reset_index(drop=True)
 ci_disp.columns = ["Feature","Baseline Loss","Masked Loss","Delta (Importance)"]
 A(tbl(ci_disp, float_fmt=".6f"))
 
-A(h2("Figure 03b — Cross-feature dependency matrix"))
+A(h2("Figure 03b  - Cross-feature dependency matrix"))
 A("Entry [row, col]: extra loss on 'col' feature when 'row' is also masked.")
 A("Positive = row feature helps predict col feature.")
 A("Source: analysis/cross_feature_matrix.csv\n")
 A(matrix_tbl(cross.round(5), float_fmt=".5f"))
 
-A(h2("Figure 04 — Spatial graph (top edge importances)"))
+A(h2("Figure 04  - Spatial graph (top edge importances)"))
 A("Edge importance = increase in reconstruction loss when that directed")
 A("edge is removed from the graph attention layer.")
 A("Source: analysis/spatial_importance.csv\n")
@@ -224,14 +225,14 @@ sp_rows.sort(key=lambda x: abs(x["Importance"]), reverse=True)
 sp_df = pd.DataFrame(sp_rows[:15])
 A(tbl(sp_df, float_fmt=".9f"))
 
-A(h2("Figure 05 — GAT attention weight matrix"))
+A(h2("Figure 05  - GAT attention weight matrix"))
 A("Entry [row, col]: mean attention weight that node 'row' (target)")
 A("places on node 'col' (source) when computing its spatial embedding.")
 A("Rows sum to 1 for each target node. Source: analysis/attention_weights.csv\n")
 A(matrix_tbl(attn.round(4), float_fmt=".4f"))
 
-A(h2("Figure 06 — Per-node detail (seasonal medians, observed only)"))
-A("Temperature (°C) — observed values only (imputed masked out)\n")
+A(h2("Figure 06  - Per-node detail (seasonal medians, observed only)"))
+A("Temperature (°C)  - observed values only (imputed masked out)\n")
 tmp_tbl = load_sensor_seasonal("temp_c")
 if not tmp_tbl.empty:
     A(tbl(tmp_tbl, float_fmt=".2f"))
@@ -244,7 +245,7 @@ do_tbl = load_sensor_seasonal("odo_mgL")
 if not do_tbl.empty:
     A(tbl(do_tbl, float_fmt=".2f"))
 
-A(h2("Figure 07 — Monthly salinity boxplot (median per calendar month)"))
+A(h2("Figure 07  - Monthly salinity boxplot (median per calendar month)"))
 A("Pooled observed salinity across all 7 nodes, by calendar month.\n")
 sal_month_rows = []
 for name, fname in IMPUTED_FILES.items():
@@ -267,19 +268,19 @@ sal_stats["Month"] = sal_stats["Month"].map(MONTH_NAMES)
 A(tbl(sal_stats, float_fmt=".2f"))
 
 # ============================================================
-A(h1("SECTION 2 — PHYSICAL FCM  (Figures 08–11)"))
+A(h1("SECTION 2  - PHYSICAL FCM  (Figures 08–11)"))
 # ============================================================
 A("Daily resolution, 2025-2026. Forcing: Net Water (Rain-PET), temp_min,")
 A("temp_max. Optimal lag = 1 day (selected by held-out validation MSE).")
 
-A(h2("Figures 08 & 09 — Physical FCM weight matrix and causal graph"))
+A(h2("Figures 08 & 09  - Physical FCM weight matrix and causal graph"))
 A("Source: analysis/fcm_weights_physical.csv")
 A("Full 11×11 weight matrix (rows=source, cols=target):\n")
 A(matrix_tbl(W_phys.round(3), float_fmt=".3f"))
 A("\nTop causal edges (|weight| > 0.05):\n")
 A(tbl(fcm_edge_table(W_phys, top_n=20), float_fmt=".3f"))
 
-A(h2("Figure 10 — FCM scenario projections (summary)"))
+A(h2("Figure 10  - FCM scenario projections (summary)"))
 A("Scenarios applied to Physical FCM; values are normalised activations [0,1].")
 A("Shown: direction of change in each variable after 60-day simulation.\n")
 
@@ -328,7 +329,7 @@ try:
 except Exception as e:
     A(f"  (could not compute scenario table: {e})")
 
-A(h2("Figure 11 — FCM influence ranking"))
+A(h2("Figure 11  - FCM influence ranking"))
 A("Net influence = sum of outgoing |weights| - sum of incoming |weights|.")
 A("Positive = net driver; Negative = net receiver.\n")
 inf_rows = []
@@ -342,20 +343,20 @@ inf_df = pd.DataFrame(inf_rows).sort_values("Net (Driver+)", ascending=False)
 A(tbl(inf_df.reset_index(drop=True), float_fmt=".3f"))
 
 # ============================================================
-A(h1("SECTION 3 — NUTRIENT FCM  (Figures 12–15)"))
+A(h1("SECTION 3  - NUTRIENT FCM  (Figures 12–15)"))
 # ============================================================
 A("Monthly resolution, 2021-2026. 16 concepts = 3 forcing + 8 sensor")
 A("+ 5 nutrient extras (pH, Chl-a, Secchi, NO2+NO3, DIN).")
 A("Optimal lag = 1 month (selected by held-out validation MSE).")
 
-A(h2("Figures 12 & 13 — Nutrient FCM weight matrix and causal graph"))
+A(h2("Figures 12 & 13  - Nutrient FCM weight matrix and causal graph"))
 A("Source: analysis/fcm_weights_nutrient.csv")
 A("Full 16×16 weight matrix (rows=source, cols=target):\n")
 A(matrix_tbl(W_nutr.round(3), float_fmt=".3f"))
 A("\nTop causal edges (|weight| > 0.05):\n")
 A(tbl(fcm_edge_table(W_nutr, top_n=25), float_fmt=".3f"))
 
-A(h2("Figures 14–15 — Scenario projections and influence ranking (Nutrient FCM)"))
+A(h2("Figures 14–15  - Scenario projections and influence ranking (Nutrient FCM)"))
 try:
     from fcm import (NUTR_CONCEPTS, N_NUTR, load_nutrient_concept_timeseries)
     nutr_monthly = load_nutrient_concept_timeseries()
@@ -407,19 +408,20 @@ inf_n_df = pd.DataFrame(inf_rows_n).sort_values("Net (Driver+)", ascending=False
 A(tbl(inf_n_df.reset_index(drop=True), float_fmt=".3f"))
 
 # ============================================================
-A(h1("SECTION 4 — DIE-OFF EVENT ANALYSIS  (Figures 16–20)"))
+A(h1("SECTION 4  - DIE-OFF EVENT ANALYSIS  (Figures 16–20)"))
 # ============================================================
 
-A(h2("Figure 16 — Anomaly Z-scores at die-off events"))
+A(h2("Figure 16  - Anomaly Z-scores at die-off events"))
 A("Source: analysis/dieoff_anomalies.csv\n")
 if not da.empty:
     A(tbl(da.round(3).reset_index(drop=True), float_fmt=".3f"))
 else:
     A("  (dieoff_anomalies.csv is empty)")
 
-A(h2("Figure 17 — Site values at event months (spatial map underlying data)"))
+A(h2("Figure 17  - Site values at event months (spatial map underlying data)"))
 grab_raw = pd.read_csv(GRAB_CSV, encoding="latin-1")
 grab_raw = grab_raw[grab_raw["sample_type"] == "Surface"].copy()
+grab_raw = grab_raw[~grab_raw["site_type"].isin({"Inlet", "Reef", "Outfall"})].copy()
 grab_raw["date"] = pd.to_datetime(grab_raw["date"])
 grab_raw["site_name"] = grab_raw["site_name"].str.replace(r"^(GOC)(\d)", r"\1-\2", regex=True)
 for event_month, event_label in [("2021-09", "Sept 2021"), ("2022-10", "Oct 2022")]:
@@ -431,10 +433,10 @@ for event_month, event_label in [("2021-09", "Sept 2021"), ("2022-10", "Oct 2022
     for c in ["do_per","do_mgL","nh4","din","sal"]:
         if c in evdf.columns:
             evdf[c] = pd.to_numeric(evdf[c], errors="coerce").round(2)
-    A(f"\n  {event_label} — all sampled sites:\n")
+    A(f"\n  {event_label}  - all sampled sites:\n")
     A(tbl(evdf, float_fmt=".2f"))
 
-A(h2("Figure 18 — Pre-event lead-up (3-month window, key sites)"))
+A(h2("Figure 18  - Pre-event lead-up (3-month window, key sites)"))
 A("Monthly grab-sample medians at canal and bay sites, 3 months before event.\n")
 key_sites  = ["LR01","MR01","GOC-014","BB14","BB25"]
 lead_vars  = ["do_per","nh4","din","sal","temp"]
@@ -458,10 +460,10 @@ for event_month, months_before, label in [
     A(tbl(ld_df, float_fmt=".2f"))
 
 # ============================================================
-A(h1("SECTION 5 — FCM VALIDATION  (Figures 21–24)"))
+A(h1("SECTION 5  - FCM VALIDATION  (Figures 21–24)"))
 # ============================================================
 
-A(h2("Figure 21 — One-step-ahead hindcast metrics"))
+A(h2("Figure 21  - One-step-ahead hindcast metrics"))
 A("R² measured on genuinely observed data points only (not NaN-filled).")
 A("R² > 0.5 = FCM has real predictive skill; < 0 = worse than mean prediction.")
 A("Source: analysis/fcm_hindcast_metrics.csv\n")
@@ -471,7 +473,7 @@ hm_disp["RMSE"] = hm_disp["RMSE"].round(3)
 hm_disp["MAE"]  = hm_disp["MAE"].round(3)
 A(tbl(hm_disp, float_fmt=".3f"))
 
-A(h2("Figure 22 — Hindcast time-series (monthly observed vs predicted)"))
+A(h2("Figure 22  - Hindcast time-series (monthly observed vs predicted)"))
 A("Predicted values computed as: A_pred(t+1) = sigmoid(W^T * A_obs(t))")
 A("then de-normalised. Table shows first/last 12 months of salinity\n"
   "(the only concept with positive R²) as representative example.\n")
@@ -504,14 +506,14 @@ try:
 except Exception as e:
     A(f"  (could not compute hindcast table: {e})")
 
-A(h2("Figures 23-24 — Event backcasts (Sept 2021, Oct 2022)"))
+A(h2("Figures 23-24  - Event backcasts (Sept 2021, Oct 2022)"))
 A("Qualitative summary: FCM seeded at event-month observed conditions,")
 A("run forward 6 months. See visualizations/23 and 24 for plotted results.")
 A("The FCM predicts moderate salinity/temperature changes but cannot")
 A("capture the acute DO crash because DO has negative hindcast R².")
 
 # ============================================================
-A(h1("SECTION 6 — GEOGRAPHIC MAPS: SENSOR STATIONS  (Figures 25–29)"))
+A(h1("SECTION 6  - GEOGRAPHIC MAPS: SENSOR STATIONS  (Figures 25–29)"))
 # ============================================================
 
 for feat, label, unit in [
@@ -520,7 +522,7 @@ for feat, label, unit in [
         ("odo_mgL",       "DO",          "mg/L"),
         ("turbidity_fnu", "Turbidity",   "FNU"),
 ]:
-    A(h2(f"Figure — {label} ({unit}) seasonal medians (observed only)"))
+    A(h2(f"Figure  - {label} ({unit}) seasonal medians (observed only)"))
     A(f"Rows = stations, columns = year+season combinations.")
     A(f"Grey in the chart = NaN here.\n")
     t = load_sensor_seasonal(feat)
@@ -530,37 +532,37 @@ for feat, label, unit in [
         A("  (no observed data)")
 
 # ============================================================
-A(h1("SECTION 7 — EXTENDED MAPS 2021–2026  (Figures 30–36)"))
+A(h1("SECTION 7  - EXTENDED MAPS 2021–2026  (Figures 30–36)"))
 # ============================================================
 
-A(h2("Figures 30–32 — Combined sensor + grab seasonal medians"))
+A(h2("Figures 30–32  - Combined sensor + grab seasonal medians"))
 A("Sensor stations (2025-2026) and grab-sample sites (2021-2024) combined.")
-A("\nFigure 30 — Water Temperature at open-bay GRAB sites (°C)\n")
+A("\nFigure 30  - Water Temperature at open-bay GRAB sites (°C)\n")
 t30 = load_grab_seasonal("temp", site_types=["Biscayne Bay"])
 if not t30.empty:
     A(tbl(t30, float_fmt=".1f"))
 
-A("\nFigure 31 — Salinity at ALL grab sites (PPT)\n")
+A("\nFigure 31  - Salinity at ALL grab sites (PPT)\n")
 t31 = load_grab_seasonal("sal")
 if not t31.empty:
     A(tbl(t31.iloc[:, :9], float_fmt=".1f"))   # first 8 cols to keep width manageable
     A("  (truncated to first 8 year+season columns; full data in CSV)")
 
-A("\nFigure 32 — DO mg/L at ALL grab sites\n")
+A("\nFigure 32  - DO mg/L at ALL grab sites\n")
 t32 = load_grab_seasonal("do_mgL")
 if not t32.empty:
     A(tbl(t32.iloc[:, :9], float_fmt=".1f"))
     A("  (truncated to first 8 year+season columns)")
 
-A(h2("Figures 33–35 — Nutrient seasonal medians (grab sites, 2021-2024)"))
+A(h2("Figures 33–35  - Nutrient seasonal medians (grab sites, 2021-2024)"))
 for grab_col, label in [("ph","pH"), ("chl_exo_ugL","Chl-a (µg/L)"), ("din","DIN (µmol/L)")]:
-    A(f"\nFigure — {label}\n")
+    A(f"\nFigure  - {label}\n")
     nt = load_grab_seasonal(grab_col)
     if not nt.empty:
         A(tbl(nt.iloc[:, :9], float_fmt=".2f"))
         A("  (truncated to first 8 year+season columns)")
 
-A(h2("Figure 36 — Canal stress: annual NH4 and DO% medians by site"))
+A(h2("Figure 36  - Canal stress: annual NH4 and DO% medians by site"))
 A("Source: grab sample data, all surface samples.\n")
 grab_raw["nh4"] = pd.to_numeric(grab_raw["nh4"], errors="coerce")
 grab_raw["do_per"] = pd.to_numeric(grab_raw["do_per"], errors="coerce")

@@ -361,12 +361,7 @@ def plot_spatial_maps_basemap(df: pd.DataFrame) -> None:
         for col, (var, vlab, cmap, log, (vmin, vmax)) in enumerate(plot_vars):
             ax = axes[row, col]
             ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
-            try:
-                ctx.add_basemap(ax, crs="EPSG:3857",
-                                source=ctx.providers.CartoDB.Positron,
-                                zoom=12, attribution=False)
-            except Exception:
-                ax.set_facecolor("#d4e9f7")
+            ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.Esri.WorldGrayCanvas, zoom=12, attribution=False)
             ax.set_xticks([]); ax.set_yticks([])
 
             # JFK Causeway reference line

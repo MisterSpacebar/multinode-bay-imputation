@@ -154,11 +154,7 @@ def _draw_basemap(ax):
     x0, y0, x1, y1 = _basemap_bounds()
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
-    try:
-        ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.CartoDB.Positron,
-                        zoom=12, attribution=False)
-    except Exception:
-        ax.set_facecolor("#d4e9f7")
+    ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.Esri.WorldGrayCanvas, zoom=12, attribution=False)
 
 
 def _scatter_stations(ax, row_data: dict, var_cfg: dict, size=420):

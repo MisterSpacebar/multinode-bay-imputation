@@ -69,6 +69,32 @@ ALL_FEATURES = [
     "pressure_psia", "odo_pct", "spec_cond_uScm", "turbidity_fnu",
 ]
 
+# Conservative export-time bounds for model-generated values. These are not
+# used to alter observations; they prevent extrapolated decoder outputs from
+# contaminating downstream analyses with physically impossible values.
+PHYSICAL_BOUNDS = {
+    "temp_c": (-5.0, 45.0),
+    "sal_ppt": (0.0, 45.0),
+    "odo_mgL": (0.0, 20.0),
+    "depth_m": (0.0, 100.0),
+    "pressure_psia": (0.0, 200.0),
+    "odo_pct": (0.0, 200.0),
+    "spec_cond_uScm": (0.0, 100000.0),
+    "turbidity_fnu": (0.0, 10000.0),
+}
+
+
+def clip_to_physical_bounds(values: np.ndarray, feature_names: list[str]) -> np.ndarray:
+    """Clip model-generated values to conservative physical bounds."""
+    clipped = np.asarray(values).copy()
+    for feature_idx, feature in enumerate(feature_names):
+        bounds = PHYSICAL_BOUNDS.get(feature)
+        if bounds is not None:
+            clipped[..., feature_idx] = np.clip(
+                clipped[..., feature_idx], bounds[0], bounds[1]
+            )
+    return clipped
+
 SAME_LOCATION_KM = 0.10
 
 # ---------------------------------------------------------------------------

@@ -156,12 +156,7 @@ def paper_seasonal_maps(grab_clim, sensor_clim):
         for ri, ss in enumerate(KEY_SEASONS):
             ax = axes[ri, ci]
             ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
-            try:
-                ctx.add_basemap(ax, crs="EPSG:3857",
-                                source=ctx.providers.CartoDB.Positron,
-                                zoom=12, attribution=False)
-            except Exception:
-                ax.set_facecolor("#e8f4f8")
+            ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.Esri.WorldGrayCanvas, zoom=12, attribution=False)
             ax.set_xticks([]); ax.set_yticks([])
 
             # Grab bubbles

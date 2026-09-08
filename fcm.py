@@ -431,6 +431,11 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
 
 
+def spectral_radius(W: np.ndarray) -> float:
+    """Return the largest absolute eigenvalue of the FCM weight matrix."""
+    return float(np.max(np.abs(np.linalg.eigvals(W))))
+
+
 def fcm_simulate(
     W:               np.ndarray,
     A0:              np.ndarray,
@@ -846,6 +851,7 @@ def main() -> None:
     delta_p = np.abs(traj_p[-1] - traj_p[-2]).max()
     print(f"\nConvergence: max |ΔA| at step 60 = {delta_p:.6f}",
           "✓" if delta_p < 0.001 else "(increase n_steps)")
+    print(f"Spectral radius: {spectral_radius(W_phys):.4f}")
 
     print("\n[Physical FCM] Generating visualisations...")
     plot_heatmap(W_phys, PHYS_CONCEPTS, N_FORCING,
@@ -891,6 +897,7 @@ def main() -> None:
     delta_n = np.abs(traj_n[-1] - traj_n[-2]).max()
     print(f"\nConvergence: max |ΔA| at step 60 = {delta_n:.6f}",
           "✓" if delta_n < 0.001 else "(increase n_steps)")
+    print(f"Spectral radius: {spectral_radius(W_nutr):.4f}")
 
     print("\n[Nutrient FCM] Generating visualisations...")
     plot_heatmap(W_nutr, NUTR_CONCEPTS, N_FORCING,

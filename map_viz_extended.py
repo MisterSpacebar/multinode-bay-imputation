@@ -180,11 +180,7 @@ def _bounds(extra_lons=None, extra_lats=None, pad_lon=0.06, pad_lat=0.05):
 def _add_basemap(ax, bounds):
     x0, y0, x1, y1 = bounds
     ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
-    try:
-        ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.CartoDB.Positron,
-                        zoom=11, attribution=False)
-    except Exception:
-        ax.set_facecolor("#d4e9f7")
+    ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.Esri.WorldGrayCanvas, zoom=12, attribution=False)
 
 
 def _plot_bubbles(ax, rows: pd.DataFrame, cfg: dict,

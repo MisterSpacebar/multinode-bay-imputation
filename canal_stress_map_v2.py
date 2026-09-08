@@ -132,12 +132,7 @@ x1, y1 = merc(max(all_lons) + 0.055, max(all_lats) + 0.035)
 
 def add_basemap(ax):
     ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
-    try:
-        ctx.add_basemap(ax, crs="EPSG:3857",
-                        source=ctx.providers.CartoDB.Positron,
-                        zoom=12, attribution=False)
-    except Exception:
-        ax.set_facecolor("#d4e9f7")
+    ctx.add_basemap(ax, crs="EPSG:3857", source=ctx.providers.Esri.WorldGrayCanvas, zoom=12, attribution=False)
     ax.set_xticks([]); ax.set_yticks([])
 
 JFK_LAT = 25.853
@@ -298,6 +293,12 @@ fig.suptitle(
     "Northern bay (above JFK Causeway) covered by sensors 2025-2026 only; "
     "no grab-sample data available for 2021-2024 in that zone",
     fontsize=12, fontweight="bold",
+)
+fig.text(
+    0.02, 0.01,
+    "Sources: Miami-Dade County DERM grab samples (bay and canal sites, 2021-2024); "
+    "FIU continuous sensor network (2025-2026).",
+    fontsize=6.5, color="#444",
 )
 
 out = OUT_DIR / "canal_stress_map_v2.png"

@@ -33,7 +33,7 @@ import torch.nn as nn
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 
-from preprocess import build_dataset
+from preprocess import build_dataset, clip_to_physical_bounds
 from model import BayImputationGNN, Normaliser
 
 
@@ -60,7 +60,7 @@ CKPT_DIR.mkdir(exist_ok=True)
 
 class WindowDataset(Dataset):
     """
-    Yields (x_win, mask_win, forcing_win, ts_win) windows.
+    Yields (x_win, input_mask_win, target_mask_win, forcing_win, ts_win) windows.
     x_win      : (WIN_LEN, N, F)  normalised
     mask_win   : (WIN_LEN, N, F)  1=present, 0=missing
     forcing_win: (WIN_LEN, 3)     [rain, temp_min, temp_max]
@@ -95,6 +95,7 @@ class WindowDataset(Dataset):
         return (
             torch.tensor(x,                  dtype=torch.float32),
             torch.tensor(msk,                dtype=torch.float32),
+            torch.tensor(self.true_mask[s:e], dtype=torch.float32),
             torch.tensor(self.forcing[s:e],  dtype=torch.float32),
             torch.tensor(self.ts[s:e],       dtype=torch.float64),
         )
@@ -166,14 +167,15 @@ def train():
         model.train()
         train_loss = 0.0
 
-        for x_b, msk_b, forcing_b, ts_b in train_loader:
+        for x_b, msk_b, target_msk_b, forcing_b, ts_b in train_loader:
             x_b       = x_b.to(DEVICE)        # (B, W, N, F)
             msk_b     = msk_b.to(DEVICE)
+            target_msk_b = target_msk_b.to(DEVICE)
             forcing_b = forcing_b.to(DEVICE)  # (B, W, 3)
             ts_b      = ts_b.float().to(DEVICE)
 
             _, pred, _ = model(x_b, msk_b, forcing_b, ei, ew, ts_b)
-            loss = criterion(pred * msk_b, x_b * msk_b)
+            loss = criterion(pred[target_msk_b.bool()], x_b[target_msk_b.bool()])
 
             optimiser.zero_grad()
             loss.backward()
@@ -188,11 +190,12 @@ def train():
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x_b, msk_b, forcing_b, ts_b in val_loader:
+            for x_b, msk_b, target_msk_b, forcing_b, ts_b in val_loader:
                 x_b = x_b.to(DEVICE); msk_b = msk_b.to(DEVICE)
+                target_msk_b = target_msk_b.to(DEVICE)
                 forcing_b = forcing_b.to(DEVICE); ts_b = ts_b.float().to(DEVICE)
                 _, pred, _ = model(x_b, msk_b, forcing_b, ei, ew, ts_b)
-                val_loss += criterion(pred * msk_b, x_b * msk_b).item()
+                val_loss += criterion(pred[target_msk_b.bool()], x_b[target_msk_b.bool()]).item()
         val_loss /= max(len(val_loader), 1)
 
         flag = ""
@@ -267,6 +270,9 @@ def impute(checkpoint: str):
 
     X_imputed_avg = X_imputed_sum / np.maximum(X_imputed_count[:, None, None], 1)
     X_imputed_denorm = norm.inverse_transform(X_imputed_avg.astype(np.float32))
+    X_imputed_denorm = clip_to_physical_bounds(
+        X_imputed_denorm, data["feature_names"]
+    )
 
     # Build output: use real observations where available, model fill for gaps
     X_out = np.where(true_mask.astype(bool), X_raw, X_imputed_denorm)

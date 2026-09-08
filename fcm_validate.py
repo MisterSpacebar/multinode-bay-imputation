@@ -148,10 +148,10 @@ def one_step_hindcast(
     obs_mask: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Predicted[t] = sigmoid(W^T @ filled_A[t])  where A[t] is the
-    observation at t with NaN replaced by column means (so the FCM
-    can still run), but we only EVALUATE the prediction at t+1
-    positions where the data was genuinely observed.
+    Predicted[t] = clip(filled_A[t] @ W, 0, 1), matching the bounded
+    linear Ridge mapping used to learn W. A[t] has NaN replaced by
+    column means so the FCM can still run, but we only EVALUATE the
+    prediction at t+1 positions where the data was genuinely observed.
 
     Returns:
       pred       - (T-1, 16)  FCM one-step predictions
@@ -168,13 +168,10 @@ def one_step_hindcast(
     pred = np.full((T - 1, N_NUTR), np.nan)
     obs  = arr_norm[1:].copy()   # NaN preserved where genuinely missing
 
-    def _sig(x):
-        return 1.0 / (1.0 + np.exp(-np.clip(x, -50, 50)))
-
     for t in range(T - 1):
         A_t = arr_norm[t].copy()
         A_t[np.isnan(A_t)] = col_means[np.isnan(A_t)]   # fill NaN for input
-        A_pred = _sig(W.T @ A_t)
+        A_pred = np.clip(A_t @ W, 0.0, 1.0)
         A_pred[:N_FORCING] = arr_norm[t + 1, :N_FORCING]  # forcing clamped
         pred[t] = A_pred
 
@@ -191,7 +188,7 @@ def compute_metrics(
 ) -> pd.DataFrame:
     """
     Per-concept R², RMSE, MAE using only genuinely observed evaluation pairs.
-    R² is clipped to [-2, 1] so a few bad predictions don't blow up the table.
+    R² is stored without clipping so poor predictive skill remains visible.
     """
     rows = []
     for i in ENDO_IDXS:
@@ -210,7 +207,7 @@ def compute_metrics(
         if ss_tot < 1e-10:
             r2 = np.nan
         else:
-            r2 = float(np.clip(1 - ss_res / ss_tot, -2.0, 1.0))
+            r2 = float(1 - ss_res / ss_tot)
         rmse = float(np.sqrt(np.mean((om - pm) ** 2)))
         mae  = float(np.mean(np.abs(om - pm)))
         rows.append({"concept": LABELS[i], "R2": r2,

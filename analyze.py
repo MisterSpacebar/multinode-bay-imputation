@@ -99,11 +99,12 @@ def _compute_loss(model, val_ds, ei, ew, extra_mask_channels=None,
     ew_use = ew_override if ew_override is not None else ew
 
     with torch.no_grad():
-        for x_b, msk_b, forcing_b, ts_b in loader:
+        for x_b, msk_b, target_msk_b, forcing_b, ts_b in loader:
             if count >= MAX_WINDOWS:
                 break
             x_b   = x_b.to(DEVICE)
             msk_b = msk_b.to(DEVICE)
+            target_msk_b = target_msk_b.to(DEVICE)
             if extra_mask_channels:
                 msk_b = msk_b.clone()
                 x_b   = x_b.clone()
@@ -113,7 +114,7 @@ def _compute_loss(model, val_ds, ei, ew, extra_mask_channels=None,
             forcing_b = forcing_b.to(DEVICE)
             ts_b      = ts_b.float().to(DEVICE)
             _, pred, _ = model(x_b, msk_b, forcing_b, ei, ew_use, ts_b)
-            loss = criterion(pred * msk_b, x_b * msk_b)
+            loss = criterion(pred[target_msk_b.bool()], x_b[target_msk_b.bool()])
             total += loss.item()
             count += 1
 
@@ -228,7 +229,7 @@ def attention_heatmap(model, val_ds, ei, ew, node_names):
     loader = DataLoader(val_ds, batch_size=4, shuffle=False, num_workers=0)
 
     with torch.no_grad():
-        for x_b, msk_b, forcing_b, ts_b in loader:
+        for x_b, msk_b, target_msk_b, forcing_b, ts_b in loader:
             if count >= 50:
                 break
             x_b       = x_b.to(DEVICE)

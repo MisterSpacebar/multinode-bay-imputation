@@ -448,7 +448,8 @@ def fcm_simulate(
     A(t+1)[clamped] = fixed value
     Returns (n_steps+1, C) trajectory.
     """
-    A    = A0.copy()
+    A    = np.nan_to_num(A0.copy(), nan=0.5)
+    clamped_values = np.nan_to_num(clamped_values, nan=0.5)
     traj = [A.copy()]
     for _ in range(n_steps):
         A_new = _sigmoid(W.T @ A)
@@ -624,19 +625,21 @@ def plot_scenarios(
     step_label:   str = "days",
     title_suffix: str = "",
 ) -> None:
+    baseline_A = np.nan_to_num(baseline_A.copy(), nan=0.5)
     mean_forcing = baseline_A[:n_forcing].copy()
     forcing_idx  = list(range(n_forcing))
 
     scenarios = [
         ("Baseline (mean)",           "#555555", mean_forcing.copy()),
-        ("Heavy rain  (rain=0.9)",    "#1f77b4", np.array([0.9, mean_forcing[1], mean_forcing[2]])),
+        ("Wet surplus  (net water=0.9)", "#1f77b4", np.array([0.9, mean_forcing[1], mean_forcing[2]])),
         ("Heat wave  (temp_max=0.9)", "#d62728", np.array([0.05, mean_forcing[1], 0.9])),
         ("Cold & dry  (temp_max=0.1)","#2ca02c", np.array([0.05, mean_forcing[1], 0.1])),
     ]
 
-    # 4 response concepts: water temp, salinity, ODO, + most interesting available
-    candidates = ["temp_c", "sal_ppt", "odo_mgL", "turbidity_fnu",
-                  "chl_a_ugL", "ph", "din_umolL"]
+    # Nutrient FCM gets nutrient response panels; physical FCM gets sensor panels.
+    candidates = (["chl_a_ugL", "no2no3_umolL", "din_umolL", "ph"]
+                  if "din_umolL" in concept_list else
+                  ["temp_c", "sal_ppt", "odo_mgL", "turbidity_fnu"])
     plot_keys  = [c for c in candidates if c in concept_list][:4]
     plot_idxs  = [concept_list.index(c) for c in plot_keys]
     plot_labels= [CONCEPT_LABELS.get(c, c) for c in plot_keys]
@@ -889,7 +892,8 @@ def main() -> None:
         ANALYSIS_DIR / "fcm_weights_nutrient.csv", float_format="%.4f")
     print(f"  Saved → analysis/fcm_weights_nutrient.csv")
 
-    baseline_nutr = arr_nutr.mean(axis=0)
+    baseline_nutr = np.nanmean(arr_nutr, axis=0)
+    baseline_nutr[np.isnan(baseline_nutr)] = 0.5
     _print_causal_summary(W_nutr, NUTR_CONCEPTS, N_FORCING, "Nutrient")
 
     traj_n = fcm_simulate(W_nutr, baseline_nutr.copy(), list(range(N_FORCING)),

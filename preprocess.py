@@ -95,6 +95,34 @@ def clip_to_physical_bounds(values: np.ndarray, feature_names: list[str]) -> np.
             )
     return clipped
 
+
+def quarantine_out_of_bounds(
+    X: np.ndarray, feature_names: list[str]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Convert physically-impossible OBSERVED readings to NaN (missing).
+
+    Sensor glitches (e.g. temp_c in the thousands, negative odo_mgL) must
+    never be treated as ground truth for training targets or evaluation -
+    quarantining them here, at the single tensor-construction choke point,
+    means every downstream consumer (training, baselines, FCM) sees them
+    as ordinary missing data instead of corrupted observations.
+
+    Returns the cleaned array and an (N, F) count of quarantined values.
+    """
+    cleaned = X.copy()
+    n_nodes = X.shape[1]
+    counts = np.zeros((n_nodes, len(feature_names)), dtype=np.int64)
+    for feature_idx, feature in enumerate(feature_names):
+        bounds = PHYSICAL_BOUNDS.get(feature)
+        if bounds is None:
+            continue
+        lower, upper = bounds
+        col = cleaned[:, :, feature_idx]
+        bad = ~np.isnan(col) & ((col < lower) | (col > upper))
+        counts[:, feature_idx] = bad.sum(axis=0)
+        col[bad] = np.nan
+    return cleaned, counts
+
 SAME_LOCATION_KM = 0.10
 
 # ---------------------------------------------------------------------------
@@ -492,6 +520,8 @@ def build_dataset(freq="5min", k_neighbours=4):
             if feat in df.columns:
                 X[:, i, j] = df[feat].values.astype(np.float32)
 
+    X, quarantine_counts = quarantine_out_of_bounds(X, ALL_FEATURES)
+
     print("Building forcing (rain + air temp)...")
     rain, temp_min, temp_max = build_forcing_for_index(common_index)
     print(f"  rain range:     {rain.min():.2f} – {rain.max():.2f} in")
@@ -515,8 +545,22 @@ def build_dataset(freq="5min", k_neighbours=4):
         pct = np.isnan(X[:, i, :]).mean() * 100
         print(f"  {sn:40s}: {pct:.1f}% missing")
 
+    n_quarantined = int(quarantine_counts.sum())
+    if n_quarantined:
+        print(f"Quarantined {n_quarantined} physically-impossible observed values (now missing):")
+        for j, feat in enumerate(ALL_FEATURES):
+            feat_total = int(quarantine_counts[:, j].sum())
+            if feat_total:
+                print(f"  {feat:20s}: {feat_total}")
+        quarantine_df = pd.DataFrame(quarantine_counts, index=short_names, columns=ALL_FEATURES)
+        out_dir = Path("analysis")
+        out_dir.mkdir(exist_ok=True)
+        quarantine_df.to_csv(out_dir / "quarantine_report.csv")
+        print("  Saved -> analysis/quarantine_report.csv")
+
     return {
         "X":             X,
+        "quarantine_counts": quarantine_counts,
         "rain":          rain,
         "temp_min":      temp_min,
         "temp_max":      temp_max,
@@ -602,6 +646,19 @@ def load_historical_grab_samples(
     # Convert all columns to numeric
     for col in sub.columns:
         sub[col] = pd.to_numeric(sub[col], errors="coerce")
+
+    # Quarantine physically-impossible sensor readings (treat as missing)
+    # before they can bias the monthly average fed into the FCM.
+    for col in sub.columns:
+        bounds = PHYSICAL_BOUNDS.get(col)
+        if bounds is None:
+            continue
+        lower, upper = bounds
+        bad = sub[col].notna() & ((sub[col] < lower) | (sub[col] > upper))
+        n_bad = int(bad.sum())
+        if n_bad:
+            print(f"  [QUARANTINE] grab-sample {col}: {n_bad} out-of-bounds values -> NaN")
+            sub.loc[bad, col] = np.nan
 
     # Monthly spatial average across all included sites
     monthly = sub.resample("MS").mean()  # MS = month-start

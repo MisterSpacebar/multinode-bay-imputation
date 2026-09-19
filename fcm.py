@@ -518,7 +518,7 @@ def plot_heatmap(
 
 
 # ---------------------------------------------------------------------------
-# 5b. Visualisation  - circular causal graph  (generic)
+# 5b. Visualisation  - layered causal graph  (generic)
 # ---------------------------------------------------------------------------
 
 def plot_causal_graph(
@@ -528,36 +528,91 @@ def plot_causal_graph(
     out_path:     Path,
     threshold:    float = 0.07,
     title:        str   = "FCM  - Causal Network",
+    label_threshold: float = 0.15,
 ) -> None:
+    """Column layout: forcing → sensor → nutrient, instead of a circle.
+
+    Grouping concepts by category into left-to-right columns (rather than
+    spreading all of them around a ring) means most edges travel in one
+    general direction and same-category nodes never have to be threaded
+    past each other, which is what caused the interweaved "hairball" in the
+    old circular version. Within each column, nodes are ordered with a
+    barycenter heuristic (a few passes of sorting by the average position of
+    connected nodes in other columns) to further cut down on crossings.
+    """
     C        = len(concept_list)
     labels   = [CONCEPT_LABELS.get(c, c) for c in concept_list]
-    n_sensor_local = C - n_forcing
+    n_sensor_local = N_SENSOR if C > N_PHYS else C - n_forcing
     n_extra  = C - N_PHYS if C > N_PHYS else 0
 
-    # Colour scheme: orange=forcing, blue=sensor, green=nutrient
-    node_colors = (
-        ["#e07b00"] * n_forcing
-        + ["#2055c8"] * n_sensor_local
-    )
+    # column 0 = forcing, 1 = sensor, 2 = nutrient (only for the 16-concept FCM)
+    col = np.zeros(C, dtype=int)
+    col[n_forcing:n_forcing + n_sensor_local] = 1
     if n_extra > 0:
-        node_colors = (
-            ["#e07b00"] * n_forcing
-            + ["#2055c8"] * N_SENSOR
-            + ["#27ae60"] * n_extra
-        )
-
-    angles = np.linspace(0, 2 * np.pi, C, endpoint=False) - np.pi / 2
-    xs     = np.cos(angles)
-    ys     = np.sin(angles)
+        col[n_forcing + n_sensor_local:] = 2
+    n_cols = int(col.max()) + 1
+    col_names = ["Exogenous\nforcing", "Sensor /\nwater quality", "Nutrients /\necology"]
+    col_colors = ["#e07b00", "#2055c8", "#27ae60"]
+    node_colors = [col_colors[c] for c in col]
 
     out_strength = np.abs(W).sum(axis=1)
-    node_sizes   = 800 + out_strength * 2200
+    node_sizes   = 500 + out_strength * 1400
 
-    fig, ax = plt.subplots(figsize=(14, 14))
-    ax.set_aspect("equal")
+    x_gap    = 7.5
+    row_gap  = 2.1
+    xs = col.astype(float) * x_gap
+
+    # ---- within-column ordering: barycenter heuristic to reduce crossings --
+    order = [list(np.where(col == c)[0]) for c in range(n_cols)]
+    for c in range(n_cols):
+        order[c].sort(key=lambda i: -out_strength[i])
+
+    def assign_ys(order):
+        ys = np.zeros(C)
+        for idxs in order:
+            n = len(idxs)
+            if n == 1:
+                ys[idxs[0]] = 0.0
+                continue
+            for k, i in enumerate(idxs):
+                ys[i] = ((n - 1) / 2 - k) * row_gap
+        return ys
+
+    ys = assign_ys(order)
+    Wsym = np.abs(W) + np.abs(W.T)
+    for _ in range(4):
+        for c in range(n_cols):
+            mask_other = col != c
+            bary = {}
+            for i in order[c]:
+                w_row = Wsym[i][mask_other]
+                wsum = w_row.sum()
+                bary[i] = float((w_row * ys[mask_other]).sum() / wsum) if wsum > 1e-9 else ys[i]
+            order[c].sort(key=lambda i: -bary[i])
+        ys = assign_ys(order)
+
+    max_rows = max(len(idxs) for idxs in order)
+    half_span = (max_rows - 1) / 2 * row_gap
+    fig_h = max(9.0, (max_rows * row_gap) + 3.0)
+    fig_w = max(12.0, n_cols * 7.5)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.axis("off")
-    ax.set_xlim(-1.9, 1.9)
-    ax.set_ylim(-1.9, 1.9)
+    xlim = (-3.0, (n_cols - 1) * x_gap + 3.0)
+    ylim = (-half_span - 2.0, half_span + 2.0)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+
+    # convert marker size (points^2) to a radius in data units, so labels
+    # can be offset just outside each node regardless of its size
+    pts_per_xunit = fig_w * 72.0 / (xlim[1] - xlim[0])
+    radius_x = np.sqrt(node_sizes / np.pi) / pts_per_xunit
+
+    # faint column headers
+    for c in range(n_cols):
+        ax.text(c * x_gap, half_span + 1.4, col_names[c], ha="center", va="bottom",
+                fontsize=11, fontweight="bold", color=col_colors[c])
+
+    out_dir = [-1 if c == n_cols - 1 else 1 for c in range(n_cols)]  # bulge away from the label zone
 
     for i in range(C):
         for j in range(C):
@@ -569,28 +624,37 @@ def plot_causal_graph(
             color = "#c0392b" if w > 0 else "#2980b9"
             lw    = 0.8 + abs(w) * 3.5
             alpha = float(np.clip(0.35 + abs(w) * 0.55, 0, 0.95))
+            if col[i] == col[j]:
+                rad = 0.4 * out_dir[col[i]]
+            else:
+                rad = 0.15 if xs[j] > xs[i] else -0.15
             ax.annotate("",
                 xy=(xs[j], ys[j]), xytext=(xs[i], ys[i]),
                 arrowprops=dict(arrowstyle="-|>", color=color, lw=lw,
-                                alpha=alpha, shrinkA=13, shrinkB=13,
-                                connectionstyle="arc3,rad=0.18"))
-            mx = (xs[i] + xs[j]) / 2 * 1.12
-            my = (ys[i] + ys[j]) / 2 * 1.12
-            ax.text(mx, my, f"{w:+.2f}", fontsize=5.5, ha="center", va="center",
-                    color=color, alpha=float(np.clip(alpha + 0.1, 0, 1)))
+                                alpha=alpha, shrinkA=14, shrinkB=14,
+                                connectionstyle=f"arc3,rad={rad}"))
+            if abs(w) >= label_threshold:
+                # true apex of the arc3 quadratic bezier, so labels sit on the curve
+                dx, dy = xs[j] - xs[i], ys[j] - ys[i]
+                mx = (xs[i] + xs[j]) / 2 - 0.5 * rad * dy
+                my = (ys[i] + ys[j]) / 2 + 0.5 * rad * dx
+                ax.text(mx, my, f"{w:+.2f}", fontsize=6.5, ha="center", va="center",
+                        color=color, alpha=float(np.clip(alpha + 0.1, 0, 1)),
+                        bbox=dict(boxstyle="round,pad=0.05", fc="white", ec="none", alpha=0.6))
 
     for i in range(C):
         ax.scatter(xs[i], ys[i], s=node_sizes[i], c=node_colors[i],
                    zorder=5, edgecolors="white", linewidths=2.5)
 
-    for i in range(C):
-        ang = angles[i]
-        off = 1.35
-        ha  = "left"  if np.cos(ang) > 0.1 else ("right" if np.cos(ang) < -0.1 else "center")
-        va  = "bottom" if np.sin(ang) > 0.1 else ("top"  if np.sin(ang) < -0.1 else "center")
-        ax.text(off * np.cos(ang), off * np.sin(ang), labels[i],
-                ha=ha, va=va, fontsize=9, fontweight="bold",
-                bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.85))
+    for c in range(n_cols):
+        # every column except the last has open space to its left; the last
+        # column (rightmost) gets labels on its right instead
+        ha = "left" if c == n_cols - 1 else "right"
+        for i in order[c]:
+            dx = (radius_x[i] + 0.3) if ha == "left" else -(radius_x[i] + 0.3)
+            ax.text(xs[i] + dx, ys[i], labels[i],
+                    ha=ha, va="center", fontsize=9, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.85))
 
     patches = [
         mpatches.Patch(color="#e07b00", label="Exogenous forcing"),
@@ -602,9 +666,10 @@ def plot_causal_graph(
         mpatches.Patch(color="#c0392b", label="Positive influence (+)"),
         mpatches.Patch(color="#2980b9", label="Negative influence (−)"),
     ]
-    ax.legend(handles=patches, loc="lower left", fontsize=9,
-              framealpha=0.9, edgecolor="#ccc")
-    ax.set_title(f"{title}\nEdges |W| ≥ {threshold:.2f}  |  Node size ∝ total outgoing",
+    ax.legend(handles=patches, loc="lower center", ncol=len(patches), fontsize=9,
+              framealpha=0.9, edgecolor="#ccc", bbox_to_anchor=(0.5, -0.06))
+    ax.set_title(f"{title}\nEdges |W| ≥ {threshold:.2f}  |  Node size ∝ total outgoing  |  "
+                 f"labels shown for |W| ≥ {label_threshold:.2f}",
                  fontsize=12, pad=14)
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
@@ -909,6 +974,7 @@ def main() -> None:
                  title="Nutrient FCM  - Causal Influence (monthly 2021–2026)")
     plot_causal_graph(W_nutr, NUTR_CONCEPTS, N_FORCING,
                       VIZ_DIR / "13_fcm_nutrient_graph.png",
+                      threshold=0.13, label_threshold=0.25,
                       title="Nutrient FCM  - Biscayne Bay 2021–2026")
     plot_scenarios(W_nutr, NUTR_CONCEPTS, N_FORCING, baseline_nutr,
                    VIZ_DIR / "14_fcm_nutrient_scenarios.png",

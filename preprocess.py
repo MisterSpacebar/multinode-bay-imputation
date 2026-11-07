@@ -383,9 +383,10 @@ def merge_2026_into_clusters(clusters, stations_2026):
 # ---------------------------------------------------------------------------
 
 def resample_to_grid(df, freq="5min"):
-    df = df.resample(freq).mean()
-    df = df.ffill(limit=3)
-    return df
+    # Do not forward-fill sensor readings: the tensor observation mask must
+    # represent measurements, not synthetic values copied from earlier times.
+    # Gap reconstruction belongs to the GNN, with provenance retained.
+    return df.resample(freq).mean()
 
 # ---------------------------------------------------------------------------
 # Rainfall

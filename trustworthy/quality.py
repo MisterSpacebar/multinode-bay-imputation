@@ -217,7 +217,9 @@ def daily_targets(qc: pd.DataFrame, node: str, config: Config = Config(),
             "coverage": coverage,
             "n_invalid": int(group["do_invalid"].sum()),
             "n_flatline": int(group["do_flatline"].sum()),
-            "n_spike_suspect": int(group["do_spike_suspect"].sum()),
+            "n_spike_suspect": int(group.get(
+                "do_spike_suspect", pd.Series(False, index=group.index)
+            ).sum()),
             "n_zero_review": int(group["do_zero_review"].sum()),
             "odo_mean": float(good.mean()) if eligible else np.nan,
             "odo_min": float(good.min()) if eligible else np.nan,

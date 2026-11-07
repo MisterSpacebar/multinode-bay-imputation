@@ -290,6 +290,12 @@ def impute(checkpoint: str):
     # Save one CSV per node
     out_dir = Path("imputed_output")
     out_dir.mkdir(exist_ok=True)
+    # Keep node-to-source mapping next to ignored local exports. Station IDs,
+    # coordinates and instrument metadata are never committed by this script.
+    if "node_provenance" in data:
+        pd.DataFrame(data["node_provenance"]).to_csv(
+            out_dir / "node_provenance.csv", index=False
+        )
     for i, name in enumerate(data["node_names"]):
         df = pd.DataFrame(
             X_out[:, i, :],

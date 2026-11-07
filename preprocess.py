@@ -62,7 +62,7 @@ CONSOLIDATED_COL_MAP = {
 }
 
 BOUYS_DIR = DATA_DIR / "bouys"
-CONSOLIDATED_MERGE_KM = 3.0    # match new stations to existing nodes within 3 km
+CONSOLIDATED_MERGE_KM = 3.0    # legacy mode only; unsafe for physical station identity
 
 ALL_FEATURES = [
     "temp_c", "sal_ppt", "odo_mgL", "depth_m",
@@ -487,21 +487,56 @@ def build_net_water_forcing(time_index: pd.DatetimeIndex):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def build_dataset(freq="5min", k_neighbours=4):
-    print("Loading 2025 stations...")
-    raw_2025 = load_2025_stations()
-    clusters = cluster_2025_stations(raw_2025)
+def build_station_sources():
+    """Keep every file/group/physical buoy source as a distinct station node.
 
-    print("\nLoading 2026 stations...")
-    raw_2026 = load_2026_stations()
-    clusters = merge_2026_into_clusters(clusters, raw_2026)
+    Geography determines GRAPH NEIGHBORHOODS, not identity or measurements.
+    Unknown deployment continuity is not invented. Two sensors at the same
+    coordinates are still separate nodes, and overlapping values are not
+    averaged across instruments.
+    """
+    sources = []
+    batches = [
+        ("2025_platform", load_2025_stations()),
+        ("2026_platform", load_2026_stations()),
+        ("2026_buoy", load_consolidated_2026()),
+    ]
+    for source_kind, stations in batches:
+        for station in stations:
+            record = dict(station)
+            record["source_kind"] = source_kind
+            record["source_name"] = str(station["name"])
+            record["name"] = f"{source_kind}__{station['name']}"
+            record["members"] = [station["name"]]
+            sources.append(record)
+    if len({s["name"] for s in sources}) != len(sources):
+        raise ValueError("Duplicate physical source node identity")
+    if not sources:
+        raise ValueError("No station sources available")
+    return sources
 
-    print("\nLoading buoy data (water_data/bouys/)...")
-    consolidated_2026 = load_consolidated_2026()
-    if consolidated_2026:
-        clusters = merge_consolidated_into_clusters(clusters, consolidated_2026)
+
+def build_dataset(freq="5min", k_neighbours=4, preserve_sources=True):
+    if preserve_sources:
+        print("Loading source-separated station nodes (no distance-based merging)...")
+        clusters = build_station_sources()
     else:
-        print("  (no consolidated file found, skipping)")
+        # Compatibility path only. This spatially averages potentially distinct
+        # instruments and should not be used to make trusted scientific claims.
+        warnings.warn("Legacy station merges can mix physically distinct sensors",
+                      RuntimeWarning)
+        print("Loading 2025 stations...")
+        raw_2025 = load_2025_stations()
+        clusters = cluster_2025_stations(raw_2025)
+        print("\nLoading 2026 stations...")
+        raw_2026 = load_2026_stations()
+        clusters = merge_2026_into_clusters(clusters, raw_2026)
+        print("\nLoading buoy data (water_data/bouys/)...")
+        consolidated_2026 = load_consolidated_2026()
+        if consolidated_2026:
+            clusters = merge_consolidated_into_clusters(clusters, consolidated_2026)
+        else:
+            print("  (no consolidated file found, skipping)")
 
     print(f"\n{len(clusters)} nodes total. Resampling...")
     resampled = [resample_to_grid(cl["df"], freq) for cl in clusters]
@@ -560,6 +595,13 @@ def build_dataset(freq="5min", k_neighbours=4):
         print("  Saved -> analysis/quarantine_report.csv")
 
     return {
+        "node_provenance": [
+            {"node": cl["name"], "source_kind": cl.get("source_kind", "legacy_merged"),
+             "source_name": cl.get("source_name", cl["name"]),
+             "members": list(cl.get("members", [cl["name"]])),
+             "lat": cl["lat"], "lon": cl["lon"]}
+            for cl in clusters
+        ],
         "X":             X,
         "quarantine_counts": quarantine_counts,
         "rain":          rain,

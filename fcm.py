@@ -351,8 +351,13 @@ def learn_fcm_weights(
     alpha:        float = 2.0,
     lag:          int   = 1,
     tag:          str   = "",
+    normalise:    bool  = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
+    normalise=True rescales W to [-1, 1] for display and sigmoid simulation;
+    use normalise=False when W must predict values (hindcast), since the
+    rescaling inflates the learned ridge weights.
+
     Returns:
       W           - (C, C) float; W[i,j] = influence of concept i on j
       arr_norm    - (T, C) min-max normalised values  [0, 1]
@@ -403,7 +408,7 @@ def learn_fcm_weights(
 
     # Normalise to [-1, 1]
     abs_max = np.abs(W).max()
-    if abs_max > 0:
+    if normalise and abs_max > 0:
         W = W / abs_max
 
     header = f"\n=== FCM weights ({tag})  - lag={lag} ===\n"

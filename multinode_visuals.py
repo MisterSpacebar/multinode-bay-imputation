@@ -385,16 +385,31 @@ def plot_channel_importance_clean():
 # 2. Coverage heatmap (node x feature), source: report/coverage_chart.txt
 # ---------------------------------------------------------------------------
 
-COVERAGE = {
-    # node                 : {Temp, Sal, DO_mg, Depth, Press, DO_pct, SpecCond, Turb}
-    "L0":                  [35.9, 35.9, 35.9, 23.9, 23.9, 35.9, 23.9, 35.9],
-    "L1":                  [67.7, 67.7, 67.7, 31.7, 31.7, 42.0, 31.7, 42.0],
-    "L2":                  [68.7, 69.5, 69.5, 50.8, 50.8, 61.6, 50.8, 61.6],
-    "L6":                  [13.1, 13.1, 13.1,  9.1,  9.1,  9.1,  9.1,  9.1],
-    "L7":                  [19.5, 19.5, 19.5,  7.5,  7.5, 19.5,  7.5, 19.5],
-    "biscayne_bay":        [32.4, 32.4, 32.4,  0.0,  0.0, 12.0,  0.0, 12.0],
-    "consolidated_crest5": [12.0, 12.0, 12.0,  0.0,  0.0, 12.0,  0.0, 12.0],
-}
+def _compute_coverage() -> dict:
+    """Observed fraction (%) per node x channel, from the imputed outputs' *_observed flags."""
+    channels = ["temp_c", "sal_ppt", "odo_mgL", "depth_m", "pressure_psia",
+                "odo_pct", "spec_cond_uScm", "turbidity_fnu"]
+    files = {
+        "L0": "raw-data-platformL0_parameters", "L1": "raw-data-platformL1_parameters",
+        "L2": "raw-data-platformL2_parameters", "L6": "raw-data-platformL6_parameters",
+        "L7": "raw-data-platformL7_parameters", "biscayne_bay": "biscayne_bay",
+        "consolidated_crest5": "consolidated_crest5",
+    }
+    out = {}
+    for node, stem in files.items():
+        flags = pd.read_csv(IMPUTED_DIR / f"{stem}_imputed.csv",
+                            usecols=[f"{c}_observed" for c in channels])
+        out[node] = [round(100 * flags[f"{c}_observed"].astype(bool).mean(), 1) for c in channels]
+    return out
+
+
+def _data_end() -> pd.Timestamp:
+    idx = pd.read_csv(IMPUTED_DIR / "biscayne_bay_imputed.csv", usecols=[0], index_col=0,
+                      parse_dates=True).index
+    return pd.Timestamp(idx.max()).tz_localize(None).normalize()
+
+
+COVERAGE = _compute_coverage()
 COVERAGE_COLS = ["Temp", "Sal", "DO(mg/L)", "Depth", "Pressure", "DO(%)", "SpecCond", "Turbidity"]
 
 
@@ -506,7 +521,7 @@ def plot_attention_network_annotated():
     legend_text = (
         "①  HUB (L2): merged L2+L3+L5 platforms (same\n"
         "     site - Little River), best-covered node\n"
-        "     (60.4%), primary source for L0/L6/Bay\n"
+        f"     ({np.mean(COVERAGE['L2']):.0f}% mean), primary source for L0/L6/Bay\n"
         "     - see zoomed inset\n\n"
         "②  FRAGILE PAIR: L7 \u2194 crest5 attend\n"
         "     ONLY to each other (w=1.0) - single\n"
@@ -687,7 +702,7 @@ def plot_baseline_overview():
 
     structural = np.zeros(60, dtype=bool)
     structural[8:56] = True
-    draw_strip(ax_r, structural, "Real Deployment: Structural Gaps (e.g., crest5, 92.5% missing)",
+    draw_strip(ax_r, structural, f"Real Deployment: Structural Gaps (e.g., crest5, {100 - np.mean(COVERAGE['consolidated_crest5']):.0f}% missing)",
                "No real value nearby for weeks/months \u2192 LOCF flatlines, Linear Interp draws one\n"
                "straight line across the whole gap \u2192 only the GNN can use OTHER stations to fill it")
 
@@ -1067,7 +1082,7 @@ def plot_limitations_and_next():
 def plot_training_pipeline():
     print("  [8] Training pipeline diagram...")
     t_start = pd.Timestamp("2025-03-10")
-    t_end = pd.Timestamp("2026-08-01")
+    t_end = _data_end()
     t_split = t_start + 0.8 * (t_end - t_start)
 
     fig, (ax_top, ax_bot) = plt.subplots(2, 1, figsize=(11, 6.5),

@@ -418,10 +418,10 @@ def _build_forcing_array(weather: pd.DataFrame, col: str,
     result = np.zeros(len(dates), dtype=np.float32)
     idx_set = set(series.index)
     for i, d in enumerate(dates):
-        if d in idx_set:
-            result[i] = series[d]
-        else:
-            result[i] = float(doy_clim.get(d.dayofyear, 0.0))
+        v = series[d] if d in idx_set else np.nan
+        if pd.isna(v):
+            v = doy_clim.get(d.dayofyear, 0.0)
+        result[i] = 0.0 if pd.isna(v) else float(v)
     return result
 
 

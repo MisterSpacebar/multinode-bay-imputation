@@ -121,7 +121,8 @@ def prepare_data() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
         candidate_lags=[1, 2, 3], alpha=1.5, tag="Validation",
     )
     W, _, col_min, col_range = learn_fcm_weights(
-        ts, NUTR_CONCEPTS, N_FORCING, alpha=1.5, lag=best_lag, tag="Validation"
+        ts, NUTR_CONCEPTS, N_FORCING, alpha=1.5, lag=best_lag, tag="Validation",
+        normalise=False,
     )
     # Drop rows where ALL endogenous concepts are missing
     endo_cols = [NUTR_CONCEPTS[i] for i in ENDO_IDXS]
@@ -174,6 +175,9 @@ def one_step_hindcast(
         A_pred = np.clip(A_t @ W, 0.0, 1.0)
         A_pred[:N_FORCING] = arr_norm[t + 1, :N_FORCING]  # forcing clamped
         pred[t] = A_pred
+
+    # Concepts the FCM never fitted (mostly missing) have all-zero columns
+    pred[:, ~W.any(axis=0)] = np.nan
 
     # Valid evaluation: both t and t+1 must have been genuinely observed
     eval_mask = obs_mask[:-1] & obs_mask[1:]   # (T-1, 16)

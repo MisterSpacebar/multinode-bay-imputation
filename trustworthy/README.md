@@ -1,22 +1,12 @@
-# Trustworthy water-quality baseline (v1)
+# Trustworthy Biscayne Bay baseline — Phase 1
 
-This folder is deliberately separate from the legacy GNN and FCM analysis.
-It does **not** change the original FCM results, make causal claims, or promise
-operational hypoxia alerts.
+This is an observed-only, retrospective QA/target/backtest workflow. It neither
+assumes that every data gap is sensor fouling nor claims to diagnose the cause
+of a hypoxia episode. It does not depend on a deployments.csv.
 
-## Why this exists
+## Quick start
 
-- The old GNN normalizer saw validation dates and its validation input was
-  unmasked. The corresponding root-level `train.py` fixes fit the normalizer
-  on training dates and score deterministic, deliberately hidden observations.
-- The old `preprocess.py` forward-filled up to three five-minute samples,
-  silently converting copied values into "observations". That fill is removed.
-- Original station exports may combine distinct instruments. The optional
-  deployment map prevents the trusted backtest from crossing instrument epochs.
-- The old `north_bay_holdout.py` uses forcing derived from FCM interpolation.
-  This new baseline **does not use FCM-derived forcing**.
-
-## Commands (from repository root)
+Run from the repository root:
 
 ```bash
 python -m unittest discover -s trustworthy/tests -v
@@ -24,88 +14,103 @@ python -m trustworthy.quality --input-dir imputed_output --out-dir trustworthy_o
 python -m trustworthy.backtest --daily trustworthy_outputs/daily_targets.csv
 ```
 
-The first command runs synthetic tests without private station data. The
-second needs existing `imputed_output/*_imputed.csv` exports. The third needs
-the daily target CSV produced by the second command.
-
-To enable *verified* cross-time forecasting, provide a private CSV such as
-`water_data/deployments.csv` with columns:
-
-```csv
-node,start_utc,end_utc,deployment_id
-station_A,2025-01-01T00:00:00Z,2025-12-31T00:00:00Z,epoch_1
-station_A,2025-12-31T00:00:00Z,2027-01-01T00:00:00Z,epoch_2
-```
-
-Use exact station filenames without `_imputed.csv` as node names.
-The example is illustrative; **do not** assign dates or identities without
-documentation. No real source names or locations need to be published.
+The quality command accepts existing exports without running GNN training.
+**For the new source-separated station identity, first retrain/re-export:**
 
 ```bash
-python -m trustworthy.quality --deployments water_data/deployments.csv
+python train.py --train
+python train.py --impute --checkpoint checkpoints/best.pt
+python -m trustworthy.quality
 python -m trustworthy.backtest
 ```
 
-Without verified epochs, the trusted backtest intentionally produces no
-comparisons. For *exploratory* results only:
+These commands are separate, because the first requires model dependencies and
+private local raw sensor files. The synthetic audit tests only require numpy
+and pandas, and do not require those files.
 
-```bash
-python -m trustworthy.backtest --allow-unverified
+## What changed
+
+- No deployment metadata needed: backtests use the independent exported node.
+  Supply optional `--deployments` and `--require-verified` only if known
+  instrument epochs must be enforced. Lack of documentation does NOT
+  disqualify a station from normal analysis.
+- `preprocess.build_dataset()` defaults to `preserve_sources=True`. Separate
+  2025 platform, 2026 platform, and buoy sources become distinct nodes, even
+  if they share coordinates. Historical 3 km buoy matching and 100 m platform
+  matching remain available only with
+  `preprocess.build_dataset(preserve_sources=False)` for compatibility.
+  Those legacy mergers are **not** valid station-level comparison data.
+- `quality.py` excludes unobserved and out-of-physical-range DO from targets,
+  but **flags rather than automatically removes** flatlines, isolated spikes,
+  and zero readings. A 0 mg/L reading may be genuine severe anoxia.
+- `events.py` logs a gap from 30 minutes, an outage from 2 hours, and an
+  extended outage from 24 hours (all configurable in `EventConfig`).
+  Gaps are detected between the first and last available export timestamps:
+  start/end-of-deployment dates cannot be inferred from missing files.
+- `targets.py` reports contiguous observed DO below 4 and 2 mg/L,
+  including whether a missing boundary truncates the episode.
+- All baseline forecast features derive from historical *observed-only*
+  daily targets. No interpolated FCM weather or nutrient values are used.
+  Training targets must end strictly before each forecast issue date.
+- Daily labels require 95% valid DO coverage by default. Below that, labels
+  become NaN, NOT zero. Days with 95–100% coverage report the counted observed
+  low-oxygen hours: these are **lower bounds**, not estimated full-day hours.
+- Sensor-quality event flags are separate from environmental low-DO events.
+  High levels of suspect readings are a reason to investigate, not proof
+  of instrument failure.
+
+## Optional issue annotations (not a deployment file)
+
+Sensor failures may result from debris, maintenance, fouling, power loss,
+telemetry outages, or other causes. The model cannot identify the cause from
+missing data. If verified operational notes exist, you may add a separate,
+private review file (never necessary to run the analysis):
+
+```csv
+node,start_utc,end_utc,manual_label
+2026_platform__station_A,2026-06-01T00:00:00Z,2026-06-02T00:00:00Z,maintenance_confirmed
 ```
 
-## Semantics and limitations
+These are **illustrative names and dates**, not factual station records.
 
-- Timestamps are interpreted as UTC if the export has no timezone. Daily
-  targets use America/New_York local dates and handle DST day length.
-  Verify the input timezone before trusting results.
-- Missing, out-of-range, and long exactly constant DO runs are not accepted
-  as validated DO. Exact zero is flagged for review but not automatically
-  deleted; genuine anoxia is possible.
-- At least 95% valid 5-minute DO coverage is required by default. Missing
-  periods are **not** assumed to have normal oxygen. `hours_lt4` and
-  `hours_lt2` count *measured* hours and are lower bounds when gaps remain.
-- `predawn_min` is the local 00:00–06:00 minimum with >=90% coverage.
-  It is not necessarily the whole-night minimum.
-- Missing temperature/salinity flags lead to NaN predictors rather than
-  treating imputed covariates as observed.
-- Forecasts are issued after the full issue day has completed. Targets are
-  single future calendar days, not rolling multi-day aggregates.
-- Model training for each forecast uses only targets that finished strictly
-  before its issue date. Test targets are not used for fitting. All baselines
-  use the same eligible samples; no extrapolated target values.
-- The comparison uses 2025-09 and 2026-09 target months as predefined
-  holdouts, with horizons 1, 3, and 7 days. These are **not** independent
-  event-level validation, and the same deployment is required at issue/target.
-- No hydrologic forcing is included yet: this is a trustworthy baseline,
-  not the final scientific forecast. The Ridge model is a simple reference.
-- The root GNN is an **imputation** model, not a forward forecaster.
-  Its fixed validation mask tests point reconstruction, not block gaps,
-  station transfer, or prospective predictions.
-- Root `train.py` still uses contemporaneous daily weather and a graph
-  derived from all stations. These may be appropriate for retrospective
-  reconstruction but **not** an operational forecast at issue time.
-- The root preprocessing currently merges some geographically nearby
-  instruments. This new package records epoch uncertainty but cannot
-  unmix already averaged readings; fixing upstream source-level identity
-  remains a separate task.
-- After changing root preprocessing, regenerate exports and retrain the GNN.
-  Existing checkpoints and CSV exports are **not** retrospectively repaired.
-- `trustworthy_outputs/` is ignored by Git. Keep private metadata in
-  `water_data/`, also ignored by Git.
+```bash
+python -m trustworthy.quality --manual-events water_data/sensor_issues.csv
+```
 
-## Outputs
+All annotations remain user-declared, are exported as separate events, and
+do not erase observations or alter the trained model.
 
-`trustworthy_outputs/station_audit.csv`: observation, invalid, flatline,
-zero-review, and valid counts by exported node.
+Optional legacy `--deployments` can still record documented instrument
+epoch transitions, but it is no longer required for quality checks or
+forecast comparisons.
 
-`trustworthy_outputs/daily_targets.csv`: observed-only daily labels,
-coverage, eligibility, and deployment epoch.
+## Generated outputs (ignored by Git)
 
-`trustworthy_outputs/backtest_predictions.csv`: each issued prediction
-with target date, horizon, actual, prediction, and errors.
+| File in trustworthy_outputs | Content |
+|---|---|
+| `station_audit.csv` | Per-station observation/invalid/suspect counts |
+| `sensor_events.csv` | Outages, gaps, suspect flatlines/spikes, annotations |
+| `daily_targets.csv` | Observed-only daily DO coverage, minima, hours below 4 and 2 |
+| `hypoxia_events.csv` | Contiguous observed low-DO episodes, gap-censor flags |
+| `backtest_predictions.csv` | Individual predictions with issue/target dates |
+| `backtest_summary.csv` | MAE, RMSE, and persistence-relative skill |
 
-`trustworthy_outputs/backtest_summary.csv`: station/month/horizon MAE,
-RMSE, event-day counts and skill against persistence.
+## Important scientific qualifications
 
-**Interpretation:** empty backtests are a legitimate warning about missing
-provenance or insufficient training history, not evidence of zero risk.
+1. The raw historical merged outputs cannot be 'unmixed'. Retrain and
+   regenerate the exported station series for source-separated evaluation.
+   Source names and node count change; GNN checkpoints trained on the old
+   graph cannot safely be reused with the new graph.
+2. Within-source file groups can still include changes in calibration,
+   deployment, instrument, or depth. The source separation does not prove
+   physical station continuity; compare across documented transitions
+   cautiously. A change of node is not proof of spatial independence.
+3. This phase does not identify seasonal drivers, estimate nutrient loads,
+   or predict future oxygen events probabilistically. Those are later stages.
+4. The GNN is a **retrospective imputation model**. Its contemporary forcing
+   and reconstruction windows are not a real-time future-forecast design.
+5. Weather forcing in the existing root GNN may be filled using retrospective
+   day-of-year climatology. Do not treat its imputation scores as operational
+   forecast skill.
+6. No real-world performance improvement is claimed until tests pass and
+   outputs are checked against private local data.

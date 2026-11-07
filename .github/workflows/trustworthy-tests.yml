@@ -5,20 +5,22 @@ on:
     paths:
       - "trustworthy/**"
       - "preprocess.py"
+      - "train.py"
       - ".github/workflows/trustworthy-tests.yml"
   push:
     branches: [main]
     paths:
       - "trustworthy/**"
       - "preprocess.py"
+      - "train.py"
       - ".github/workflows/trustworthy-tests.yml"
 
 jobs:
   synthetic-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install tested audit dependencies
@@ -26,4 +28,4 @@ jobs:
       - name: Run synthetic unit tests
         run: python -m unittest discover -s trustworthy/tests -v
       - name: Compile changed Python files
-        run: python -m py_compile trustworthy/*.py trustworthy/tests/*.py preprocess.py
+        run: python -m py_compile trustworthy/*.py trustworthy/tests/*.py preprocess.py train.py

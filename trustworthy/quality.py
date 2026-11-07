@@ -66,6 +66,15 @@ def read_station(path: Path, config: Config = Config()) -> pd.DataFrame:
         raise ValueError(f"{path}: duplicate timestamps; resolve upstream")
     frame = frame.sort_index()
 
+    # Some exports keep the raw instrument column names.
+    raw_names = {
+        "ODO (mg/L)": "odo_mgL", "Temperature (C)": "temp_c", "Salinity (PPT)": "sal_ppt",
+        "Depth (m)": "depth_m", "Pressure (psia)": "pressure_psia", "ODO (%Sat)": "odo_pct",
+        "Specific Conductance (uS/cm)": "spec_cond_uScm", "Turbidity (FNU)": "turbidity_fnu",
+    }
+    frame = frame.rename(columns={
+        **raw_names, **{f"{k}_observed": f"{v}_observed" for k, v in raw_names.items()}})
+
     if "odo_mgL" not in frame or "odo_mgL_observed" not in frame:
         raise ValueError(f"{path}: DO and its observation flag are required")
 

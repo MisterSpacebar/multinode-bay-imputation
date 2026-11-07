@@ -38,11 +38,11 @@ def prepare(frame: pd.DataFrame, node: str, horizon: int) -> pd.DataFrame:
     ).fillna("not_provided")
     d["source_verified"] = d.get(
         "source_verified", pd.Series(False, index=d.index)
-    ).fillna(False).astype(bool)
+    ).astype("string").str.lower().eq("true").fillna(False)
     d["target_epoch"] = d["deployment_id"].shift(-horizon)
     d["same_epoch"] = (
         d["source_verified"]
-        & d["source_verified"].shift(-horizon).fillna(False).astype(bool)
+        & d["source_verified"].shift(-horizon).fillna(False)
         & d["deployment_id"].eq(d["target_epoch"])
     )
     return d

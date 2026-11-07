@@ -94,18 +94,44 @@ def read_station(path: Path, config: Config = Config()) -> pd.DataFrame:
             out["do_flag_observed"] = is_observed
             out["do_invalid"] = is_observed & ~valid_range
 
-    # Retrospective QC: flag the ENTIRE run if 12 consecutive grid-aligned
-    # observed readings are exactly identical. No interpolation across gaps.
+    # Automated flatline/spike tests are conservative SUSPECT flags, not
+    # automatic exclusions. Real prolonged anoxia or stable oxygen can occur.
     do = out["odo_mgL"]
     step = pd.Timedelta(minutes=config.interval_minutes)
-    contiguous = out.index.to_series().diff().eq(step)
-    new_run = do.ne(do.shift()) | ~contiguous | do.isna()
-    run_id = new_run.cumsum()
-    run_size = do.groupby(run_id).transform("size")
-    flatline = do.notna() & run_size.ge(config.flatline_samples)
-    out["do_flatline"] = flatline
-    out["do_zero_review"] = do.eq(0)  # zero can be genuine; review, do not auto-delete
-    out["do_valid"] = do.where(~flatline)
+    values = do.to_numpy(dtype=float)
+    flat = np.zeros(len(do), dtype=bool)
+    start = 0
+    while start < len(do):
+        if not np.isfinite(values[start]):
+            start += 1
+            continue
+        end = start + 1
+        while (end < len(do) and np.isfinite(values[end])
+               and out.index[end] - out.index[end - 1] == step
+               and abs(values[end] - values[start]) <= 0.005):
+            end += 1
+        if end - start >= config.flatline_samples:
+            flat[start:end] = True
+        start = end
+    out["do_flatline"] = flat
+    prev, following = do.shift(1), do.shift(-1)
+    contiguous_prev = out.index.to_series().diff().eq(step)
+    contiguous_next = out.index.to_series().shift(-1).sub(out.index.to_series()).eq(step)
+    # Isolated excursions only. Rapid sustained drops should not be rejected.
+    out["do_spike_suspect"] = (
+        do.notna() & prev.notna() & following.notna()
+        & contiguous_prev & contiguous_next
+        & (prev - following).abs().le(0.5)
+        & (do - prev).abs().gt(1.0)
+        & (do - following).abs().gt(1.0)
+    ).fillna(False)
+    out["do_zero_review"] = do.eq(0)  # do not suppress genuine anoxia
+    out["do_valid"] = do             # only missing/hard-range failures are excluded
+    out["do_qc_primary"] = np.select(
+        [~out["do_flag_observed"], out["do_invalid"],
+         out["do_flatline"] | out["do_spike_suspect"]],
+        [9, 4, 3], default=1,
+    ).astype(np.int8)
     return out
 
 
@@ -172,8 +198,8 @@ def daily_targets(qc: pd.DataFrame, node: str, config: Config = Config(),
         eligible = coverage >= config.min_coverage
         deployments_today = group.loc[group["do_valid"].notna(), "deployment_id"].unique()
         epoch = deployments_today[0] if len(deployments_today) == 1 else "mixed"
-        if epoch == "mixed":
-            eligible = False
+        # Deployment metadata is optional: an unknown epoch is not a QC failure.
+        # Mixed epochs are reported, not silently treated as identical instruments.
         predawn = group[(group.index.hour >= 0) & (group.index.hour < 6)]["do_valid"]
         predawn_expected = int(6 * 60 / config.interval_minutes)
         predawn_min = (predawn.min() if predawn.notna().sum() >=
@@ -183,6 +209,7 @@ def daily_targets(qc: pd.DataFrame, node: str, config: Config = Config(),
             "date": date.date().isoformat(),
             "deployment_id": str(epoch),
             "source_verified": epoch not in ("unverified", "mixed"),
+            "identity_caution": epoch in ("unverified", "mixed"),
             "eligible": bool(eligible),
             "expected_slots": expected,
             "observed_slots": int(group["do_flag_observed"].sum()),
@@ -190,6 +217,7 @@ def daily_targets(qc: pd.DataFrame, node: str, config: Config = Config(),
             "coverage": coverage,
             "n_invalid": int(group["do_invalid"].sum()),
             "n_flatline": int(group["do_flatline"].sum()),
+            "n_spike_suspect": int(group["do_spike_suspect"].sum()),
             "n_zero_review": int(group["do_zero_review"].sum()),
             "odo_mean": float(good.mean()) if eligible else np.nan,
             "odo_min": float(good.min()) if eligible else np.nan,
@@ -215,6 +243,7 @@ def station_audit(qc: pd.DataFrame, node: str) -> dict:
         "n_do_observed_flag": int(qc["do_flag_observed"].sum()),
         "n_do_invalid": int(qc["do_invalid"].sum()),
         "n_do_flatline": int(qc["do_flatline"].sum()),
+        "n_do_spike_suspect": int(qc["do_spike_suspect"].sum()),
         "n_do_zero_review": int(qc["do_zero_review"].sum()),
         "n_do_valid": int(qc["do_valid"].notna().sum()),
     }
@@ -224,6 +253,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Observed-only DO QC and daily targets")
     parser.add_argument("--input-dir", type=Path, default=Path("imputed_output"))
     parser.add_argument("--out-dir", type=Path, default=Path("trustworthy_outputs"))
+    parser.add_argument("--manual-events", type=Path, default=None,
+                        help="Optional reviewed issue annotations; no deployment file needed")
     parser.add_argument("--deployments", type=Path, default=None,
                         help="Optional pseudonymous station/deployment epoch CSV")
     parser.add_argument("--min-coverage", type=float, default=0.95)
@@ -235,20 +266,36 @@ def main() -> None:
     paths = sorted(args.input_dir.glob("*_imputed.csv"))
     if not paths:
         parser.error(f"No *_imputed.csv files in {args.input_dir}")
-    summaries, audits = [], []
+    from trustworthy.events import EventConfig, detect_quality_events, load_manual_events
+    from trustworthy.targets import detect_hypoxia_events
+
+    manual = load_manual_events(getattr(args, "manual_events", None))
+    summaries, audits, sensor_events, hypoxia_events = [], [], [], []
     for path in paths:
         node = path.name.removesuffix("_imputed.csv")
         qc = read_station(path, config)
         summaries.append(daily_targets(qc, node, config, deployments))
         audits.append(station_audit(qc, node))
+        sensor_events.extend(detect_quality_events(qc, node, EventConfig(
+            interval_minutes=config.interval_minutes), manual))
+        hypoxia_events.extend(detect_hypoxia_events(qc, node, config.interval_minutes))
     args.out_dir.mkdir(parents=True, exist_ok=True)
     daily = pd.concat(summaries, ignore_index=True)
     daily.to_csv(args.out_dir / "daily_targets.csv", index=False)
     pd.DataFrame(audits).to_csv(args.out_dir / "station_audit.csv", index=False)
+    pd.DataFrame(sensor_events, columns=[
+        "node", "event_type", "start_utc", "end_utc", "duration_minutes",
+        "severity", "evidence", "auto_detected", "manual_label"
+    ]).to_csv(args.out_dir / "sensor_events.csv", index=False)
+    pd.DataFrame(hypoxia_events, columns=[
+        "node", "threshold_mgL", "start_utc", "end_utc",
+        "observed_duration_minutes", "min_odo_mgL", "censored_left", "censored_right"
+    ]).to_csv(args.out_dir / "hypoxia_events.csv", index=False)
     print(f"Audited {len(paths)} stations; {int(daily['eligible'].sum())} eligible station-days")
     print(f"Saved {args.out_dir / 'daily_targets.csv'}")
     if deployments is None:
-        print("WARNING: deployment epochs unverified; cross-instrument comparisons remain exploratory.")
+        print("NOTE: no optional deployment metadata; station continuity cannot be assumed.")
+    print(f"Logged {len(sensor_events)} quality events and {len(hypoxia_events)} sustained low-DO episodes")
 
 
 if __name__ == "__main__":

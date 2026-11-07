@@ -69,12 +69,13 @@ class WindowDataset(Dataset):
     ts_win     : (WIN_LEN,)       unix timestamps (float)
     """
 
-    def __init__(self, X_norm, X_raw_mask, forcing, timestamps, mask_ratio=MASK_RATIO):
+    def __init__(self, X_norm, X_raw_mask, forcing, timestamps, mask_ratio=MASK_RATIO, seed=None):
         self.X = X_norm                   # (T, N, F)
         self.true_mask = X_raw_mask       # (T, N, F) 1=real data
         self.forcing = forcing            # (T, 3)
         self.ts = timestamps              # (T,)
         self.mask_ratio = mask_ratio
+        self.seed = seed
         self.windows = list(range(0, len(X_norm) - WIN_LEN + 1, STRIDE))
 
     def __len__(self):
@@ -89,7 +90,7 @@ class WindowDataset(Dataset):
         msk = self.true_mask[s:e].copy()    # (W, N, F)
 
         if self.mask_ratio > 0:
-            rng = np.random.default_rng()
+            rng = np.random.default_rng(None if self.seed is None else self.seed + idx)
             corruption = rng.random(msk.shape) < self.mask_ratio
             extra_mask = msk.astype(bool) & corruption
             msk[extra_mask] = 0
@@ -98,7 +99,7 @@ class WindowDataset(Dataset):
         return (
             torch.tensor(x,                  dtype=torch.float32),
             torch.tensor(msk,                dtype=torch.float32),
-            torch.tensor(self.true_mask[s:e], dtype=torch.float32),
+            torch.tensor(extra_mask.astype(np.float32) if self.mask_ratio > 0 else np.zeros_like(msk), dtype=torch.float32),
             torch.tensor(target_x,           dtype=torch.float32),
             torch.tensor(self.forcing[s:e],  dtype=torch.float32),
             torch.tensor(self.ts[s:e],       dtype=torch.float64),
@@ -129,8 +130,9 @@ def train():
 
     # -- Normalise (fit only on observed values) ------------------------------
     norm = Normaliser()
-    norm.fit(X_raw)
-    X_norm = norm.transform(np.nan_to_num(X_raw, nan=0.0))
+    split = int(0.8 * T)
+    norm.fit(X_raw[:split])
+    X_norm = np.nan_to_num(norm.transform(X_raw), nan=0.0, posinf=0.0, neginf=0.0)
     true_mask = (~np.isnan(X_raw)).astype(np.float32)
 
     # Save normaliser alongside checkpoint
@@ -138,12 +140,11 @@ def train():
         pickle.dump(norm, f)
 
     # -- Split: 80 % train, 20 % val (chronological) -------------------------
-    split = int(0.8 * T)
     train_ds = WindowDataset(X_norm[:split],  true_mask[:split],
                              forcing[:split], ts[:split])
     val_ds   = WindowDataset(X_norm[split:],  true_mask[split:],
                              forcing[split:], ts[split:],
-                             mask_ratio=0.0)
+                             mask_ratio=MASK_RATIO, seed=20261107)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True,  num_workers=0)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
@@ -180,6 +181,8 @@ def train():
             ts_b      = ts_b.float().to(DEVICE)
 
             _, pred, _ = model(x_b, msk_b, forcing_b, ei, ew, ts_b)
+            if not target_msk_b.bool().any():
+                continue
             loss = criterion(pred[target_msk_b.bool()], target_x_b[target_msk_b.bool()])
 
             optimiser.zero_grad()
@@ -201,7 +204,8 @@ def train():
                 target_x_b = target_x_b.to(DEVICE)
                 forcing_b = forcing_b.to(DEVICE); ts_b = ts_b.float().to(DEVICE)
                 _, pred, _ = model(x_b, msk_b, forcing_b, ei, ew, ts_b)
-                val_loss += criterion(pred[target_msk_b.bool()], target_x_b[target_msk_b.bool()]).item()
+                if target_msk_b.bool().any():
+                    val_loss += criterion(pred[target_msk_b.bool()], target_x_b[target_msk_b.bool()]).item()
         val_loss /= max(len(val_loader), 1)
 
         flag = ""
@@ -240,7 +244,7 @@ def impute(checkpoint: str):
     with open(CKPT_DIR / "normaliser.pkl", "rb") as f:
         norm: Normaliser = pickle.load(f)
 
-    X_norm    = norm.transform(np.nan_to_num(X_raw, nan=0.0))
+    X_norm    = np.nan_to_num(norm.transform(X_raw), nan=0.0, posinf=0.0, neginf=0.0)
     true_mask = (~np.isnan(X_raw)).astype(np.float32)
 
     model = BayImputationGNN(n_features=F, n_nodes=N, n_forcing=3,

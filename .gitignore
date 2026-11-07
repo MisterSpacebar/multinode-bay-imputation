@@ -26,3 +26,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Reproducible audit outputs (may contain private station metadata)
+trustworthy_outputs/

@@ -117,7 +117,11 @@ class CoverageAndAblationTests(unittest.TestCase):
         data = daily_frame("2026-09-10", n=10)
         pred, diag = eligible_forecasts(
             data, horizons=(7,), test_months=("2026-09",), min_train=40)
-        self.assertTrue(pred.empty)
+        # Persistence needs no fitted model and can still forecast once an
+        # issue-day observation exists. Ridge cannot with <40 train examples.
+        self.assertEqual(set(pred["model"]), {"persistence", "trail7"})
+        self.assertTrue((pd.to_datetime(pred["issue_date"]) >=
+                         pd.Timestamp("2026-09-10")).all())
         self.assertTrue((diag["reason"].isin([
             "no_issue_history", "insufficient_training",
             "missing_model_features", "missing_issue_do",

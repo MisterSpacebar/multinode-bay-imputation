@@ -212,7 +212,7 @@ def train():
         if val_loss < best_val:
             best_val = val_loss
             torch.save(model.state_dict(), CKPT_DIR / "best.pt")
-            flag = "  ✓ saved"
+            flag = "  [saved]"
 
         if epoch % 2 == 0 or epoch == 1:
             print(f"  Epoch {epoch:3d}/{EPOCHS}  "
@@ -313,7 +313,7 @@ def impute(checkpoint: str):
         path = out_dir / f"{name}_imputed.csv"
         out.to_csv(path)
         n_imputed = (true_mask[:, i, :] == 0).sum()
-        print(f"  {name}: {n_imputed} values imputed → {path}")
+        print(f"  {name}: {n_imputed} values imputed -> {path}")
 
     print(f"\nDone. Results in {out_dir}/")
     return X_out

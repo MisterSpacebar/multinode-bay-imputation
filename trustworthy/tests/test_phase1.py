@@ -111,8 +111,8 @@ class PhaseOneTests(unittest.TestCase):
         self.assertFalse(result.empty)
         self.assertTrue((pd.to_datetime(result["target_date"]) >
                          pd.to_datetime(result["issue_date"])).all())
-        self.assertEqual(set(result["model"]), {"persistence", "trail7",
-                                               "ridge", "train_mean"})
+        self.assertTrue({"persistence", "trail7", "ridge", "train_mean",
+                         "ridge_do", "ridge_physical"}.issubset(set(result["model"])))
 
 
 if __name__ == "__main__":

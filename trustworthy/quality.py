@@ -265,7 +265,31 @@ def main() -> None:
     args = parser.parse_args()
     config = Config(args.interval_minutes, args.min_coverage, args.flatline_samples)
     deployments = read_deployments(args.deployments)
-    paths = sorted(args.input_dir.glob("*_imputed.csv"))
+    # Prefer the manifest written during the last GNN imputation. This
+    # prevents older files in the same directory being counted as stations.
+    # A manifest is advisory about file membership, not proof of data quality.
+    manifest = args.input_dir / "node_provenance.csv"
+    all_paths = sorted(args.input_dir.glob("*_imputed.csv"))
+    if manifest.exists():
+        entries = pd.read_csv(manifest)
+        if "node" not in entries:
+            parser.error(f"Missing 'node' column in {manifest}")
+        names = entries["node"].astype(str).tolist()
+        if not names or len(set(names)) != len(names):
+            parser.error("Node provenance manifest is empty or has duplicates")
+        expected = {f"{name}_imputed.csv" for name in names}
+        existing = {p.name for p in all_paths}
+        missing = sorted(expected - existing)
+        if missing:
+            parser.error(f"Manifest lists missing exports: {missing[:10]}")
+        stale = sorted(existing - expected)
+        if stale:
+            print(f"Ignoring {len(stale)} unlisted stale exports: "
+                  + ", ".join(stale[:5]) + (" ..." if len(stale) > 5 else ""))
+        paths = [args.input_dir / f"{name}_imputed.csv" for name in names]
+    else:
+        print("WARNING: no node_provenance.csv manifest; using all matching files.")
+        paths = all_paths
     if not paths:
         parser.error(f"No *_imputed.csv files in {args.input_dir}")
     from trustworthy.events import EventConfig, detect_quality_events, load_manual_events

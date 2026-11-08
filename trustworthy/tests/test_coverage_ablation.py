@@ -119,7 +119,7 @@ class CoverageAndAblationTests(unittest.TestCase):
             data, horizons=(7,), test_months=("2026-09",), min_train=40)
         # Persistence needs no fitted model and can still forecast once an
         # issue-day observation exists. Ridge cannot with <40 train examples.
-        self.assertEqual(set(pred["model"]), {"persistence", "trail7"})
+        self.assertEqual(set(pred["model"]), {"persistence"})
         self.assertTrue((pd.to_datetime(pred["issue_date"]) >=
                          pd.Timestamp("2026-09-10")).all())
         self.assertTrue((diag["reason"].isin([

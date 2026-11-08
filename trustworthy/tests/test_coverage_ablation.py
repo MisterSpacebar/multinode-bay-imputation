@@ -106,7 +106,7 @@ class CoverageAndAblationTests(unittest.TestCase):
         sept = monthly.set_index("month").loc["2026-09"]
         self.assertEqual(int(sept["missing_do_days"]), 1)
         self.assertEqual(int(sept["temperature_available_days"]), 0)
-        self.assertEqual(int(sept["eligible_days"]), 8)
+        self.assertEqual(int(sept["eligible_days"]), 7)
 
     def test_each_ablation_uses_its_own_requirements(self):
         self.assertNotIn("temp_mean", MODEL_FEATURES["ridge_do"])

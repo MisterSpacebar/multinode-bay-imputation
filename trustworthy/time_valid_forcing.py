@@ -149,6 +149,66 @@ def materialize(daily: pd.DataFrame, forcing: pd.DataFrame,
     return result
 
 
+def materialize_lags(daily: pd.DataFrame, forcing: pd.DataFrame,
+                     lags=(1, 2), min_coverage: float = MIN_COVERAGE,
+                     allow_regional_weather: bool = False) -> pd.DataFrame:
+    """Historical forcing on the issue day, with actual source availability.
+
+    A prior calendar day's value is allowed only if its observation ended and
+    it was published by the end of the current issue day. Missing remains NaN.
+    Node-specific data override region only if ABSENT, not if reported late.
+    """
+    if not lags or any(int(lag) != lag or lag < 0 for lag in lags):
+        raise ValueError("lags must be nonnegative integer days")
+    if len(set(lags)) != len(lags):
+        raise ValueError("Duplicate forcing lags")
+    if not {"node", "date"}.issubset(daily):
+        raise ValueError("Daily data must contain node,date")
+    issues = daily[["node", "date"]].copy()
+    issues["date"] = pd.to_datetime(issues["date"], format="%Y-%m-%d")
+    if issues.duplicated(["node", "date"]).any():
+        raise ValueError("Duplicate issue dates")
+    if forcing.duplicated(["node", "date"]).any():
+        raise ValueError("Duplicate forcing days")
+    issue_end = (issues["date"] + pd.DateOffset(days=1)).dt.tz_localize(
+        LOCAL_TZ).dt.tz_convert("UTC")
+    result = issues.copy()
+    for lag in lags:
+        prior = issues.copy()
+        prior["forcing_date"] = prior["date"] - pd.Timedelta(days=int(lag))
+        local = prior.merge(
+            forcing, left_on=["node", "forcing_date"],
+            right_on=["node", "date"], how="left",
+            validate="many_to_one", suffixes=("", "_source"))
+        regional = None
+        if allow_regional_weather:
+            region = forcing.loc[forcing["node"].eq("regional")].drop(
+                columns=["node"])
+            regional = prior[["forcing_date"]].merge(
+                region, left_on="forcing_date", right_on="date",
+                how="left", validate="many_to_one")
+        for field in FIELDS:
+            valid = (
+                local[field].notna()
+                & local[f"{field}_coverage"].ge(min_coverage)
+                & local[f"{field}_observed_end_utc"].le(issue_end)
+                & local[f"{field}_available_at_utc"].le(issue_end)
+            )
+            values = local[field].where(valid)
+            if regional is not None and field in ("rain_mm", "wind_mps"):
+                no_local = local[field].isna()
+                reg_ok = (
+                    regional[field].notna()
+                    & regional[f"{field}_coverage"].ge(min_coverage)
+                    & regional[f"{field}_observed_end_utc"].le(issue_end)
+                    & regional[f"{field}_available_at_utc"].le(issue_end)
+                )
+                use = no_local & reg_ok
+                values = values.where(~use, regional[field].where(use))
+            result[f"{field}_lag{lag}"] = values.to_numpy(dtype=float)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Audit time-valid forcing observations at each issue day")
@@ -158,16 +218,21 @@ def main():
     parser.add_argument("--out", type=Path, default=Path(
         "trustworthy_outputs/onset/time_valid_forcing.csv"))
     parser.add_argument("--allow-regional-weather", action="store_true")
+    parser.add_argument("--lags", default="1,2",
+                        help="Comma-separated complete prior-day lags")
     parser.add_argument("--min-coverage", type=float, default=MIN_COVERAGE)
     args = parser.parse_args()
     daily = pd.read_csv(args.daily)
     forcing = read_forcing(args.forcing)
-    out = materialize(daily, forcing, args.min_coverage,
-                      args.allow_regional_weather)
+    lags = tuple(int(x.strip()) for x in args.lags.split(",") if x.strip())
+    out = materialize_lags(daily, forcing, lags=lags,
+                           min_coverage=args.min_coverage,
+                           allow_regional_weather=args.allow_regional_weather)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(args.out, index=False)
-    print(f"Time-valid complete rain/wind/water-level station-days: "
-          f"{out.forcing_complete.sum()}/{len(out)}")
+    for col in out.columns:
+        if col not in ("node", "date"):
+            print(f"{col}: {int(out[col].notna().sum())} / {len(out)} issue days")
     print(f"Saved {args.out}")
 
 

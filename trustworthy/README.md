@@ -4,6 +4,62 @@ This is an observed-only, retrospective QA/target/backtest workflow. It neither
 assumes that every data gap is sensor fouling nor claims to diagnose the cause
 of a hypoxia episode. It does not depend on a deployments.csv.
 
+
+## Phase 1 completion: coverage and feature ablation
+
+Run after `python -m trustworthy.quality`:
+
+```bash
+python -m trustworthy.coverage_report
+python -m trustworthy.backtest
+# Optional comparison with the legacy September test months only:
+python -m trustworthy.backtest --months 2025-09,2026-09
+```
+
+The backtest now defaults to **every recorded calendar month**, evaluated
+chronologically with training targets strictly earlier than each issue date.
+This is a rolling-origin retrospective evaluation; early months may lack 40
+training examples. Reports explicitly account for exclusions instead of
+silently selecting only a few stations. A particular station is never
+promised to have enough valid observations to forecast.
+
+The models have different required predictors: persistence and a train mean
+need issue-day DO; a 7-day average needs recent DO; DO-only Ridge needs
+complete daily DO features; physical Ridge additionally needs temperature and
+salinity; full Ridge additionally needs predawn DO and trail7. Models are
+compared to persistence on their **same target dates**, so differences in
+missing covariates cannot create a false skill advantage. Models are *not*
+necessarily evaluated on the same dates as one another: inspect `n_test`
+and restrict to their intersection for direct cross-model ranking.
+
+The generated files are:
+
+- `station_month_coverage.csv`: station-month eligible days, observed low-DO
+  days, feature availability and suspect-day counts.
+- `backtest_exclusions.csv`: station/month/horizon/model counts by reason,
+  including missing targets, missing issue-day DO, missing optional features,
+  insufficient training history and unavailable issue dates.
+- `backtest_predictions.csv`: each issue/target-date prediction and paired
+  persistence forecast, preserved as individual records.
+- `backtest_summary.csv`: paired persistence skill (RMSE), MAE, observed
+  hypoxic-day counts and errors conditional on an observed hypoxic target day.
+
+Prediction counts and event prevalence may be small or heavily correlated.
+No predictive early-warning claim is established by these diagnostics alone.
+
+The quality scan reads `imputed_output/node_provenance.csv` (when available)
+so old exports left in the same directory are **ignored**, not mistakenly
+counted as new physical stations. Missing listed exports fail loudly. If no
+manifest exists, all matching exports are scanned with a warning. No files
+are deleted automatically.
+
+Training and imputation status text uses ASCII characters, avoiding the
+Windows piped-console encoding failure previously triggered by a check mark.
+
+For the next FCM integration, see [FCM_HANDOFF.md](FCM_HANDOFF.md). The
+current root FCM expects seven old merged filenames and uses retrospective
+interpolation, so it must not be treated as a leak-free forecasting pipeline.
+
 ## Quick start
 
 Run from the repository root:

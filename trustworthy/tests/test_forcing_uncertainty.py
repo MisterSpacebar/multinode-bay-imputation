@@ -121,13 +121,13 @@ class AvailabilityTests(unittest.TestCase):
     def test_dst_issue_end_is_local_midnight(self):
         d = pd.DataFrame({"node": ["bay"], "date": ["2026-11-02"]})
         f = pd.DataFrame([forcing_row(
-            "bay", "2026-11-01", 2., "2026-11-02T04:30:00Z")])
+            "bay", "2026-11-01", 2., "2026-11-02T05:30:00Z")])
         with tempfile.TemporaryDirectory() as directory:
             filename = Path(directory) / "forcing.csv"
             f.to_csv(filename, index=False)
             raw = read_forcing(filename)
-        # Nov 2 starts 05:00 UTC due to DST change. Publication 04:30
-        # precedes issue-day end, so lag1 should be available.
+        # Nov 2 starts 05:00 UTC due to DST change. Publication at 05:30
+        # follows the Nov 1 daily aggregate, preceding Nov 2 issue-end.
         a = materialize_lags(d, raw, lags=(1,))
         self.assertEqual(a.loc[0, "rain_mm_lag1"], 2.)
 

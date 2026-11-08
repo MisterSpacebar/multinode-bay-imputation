@@ -126,3 +126,61 @@ No future rainfall, discharge, tides, weather forecasts or nutrients are used.
    surveys stop.
 5. Explore GNN spatial embeddings only after reliable feature coverage and
    common-case FCM results justify the extra modeling complexity.
+
+## Post-fit diagnostics: model uncertainty and edge reliability
+
+Once `python -m fcm_v2.evaluate` and `python -m trustworthy.backtest`
+have generated their own ignored local CSVs, run:
+
+```bash
+python -m fcm_v2.diagnostics
+```
+
+This reads `fcm_v2_outputs/learned_edges.csv`,
+`fcm_v2_outputs/predictions.csv`,
+`trustworthy_outputs/backtest_predictions.csv`, and (when present)
+`fcm_v2_outputs/scenario_sensitivity.csv`. It does not need any source
+instrument files or `deployments.csv`. You can run
+`--bootstrap 5000` for more Monte Carlo replicates.
+
+Outputs in `fcm_v2_outputs/diagnostics/`:
+
+- `paired_uncertainty.csv`: matched-node/issue/target comparisons of the
+  physical FCM with persistence, the DO-only FCM and Ridge physical.
+  Includes approximate 95% station-stratified station-month resampling
+  intervals for RMSE difference, sample sizes and hypoxic-day errors.
+- `edge_stability.csv`: signed coefficient medians, 10–90% quantiles,
+  origin-month counts, meaningful sign flips, near-zero fraction, early/late
+  medians and exploratory stability flags. Consecutive refitted models
+  overlap strongly; stability **is not** independent scientific validation.
+- `edge_do_summary.csv`: count of stations with positive, negative and
+  exploratory-stable incoming DO/hypoxia edges by horizon.
+- `leave_one_station_out.csv`: changes in the candidate-vs-reference
+  result after omitting each station, detecting dominance by one location.
+- `sensitivity_audit.csv`: flags unusually large fitted responses to +1 C
+  or +1 ppt issue-day perturbations. Large effects can arise from
+  collinearity, narrow station-specific predictor ranges, sparse data or
+  extrapolation; they are *not* causal effects.
+
+As an external check, the uploaded November 2026 v2 files had seven-day
+common-case RMSE about 7.07 h (linear physical), 7.49 h (linear DO),
+6.96 h (Ridge physical) and 7.94 h (persistence) across 473 forecasts
+and six stations. Exploratory station-month resampling gave FCM minus
+persistence approximately -0.87 h (95% interval -1.50 to -0.17 h),
+FCM minus DO-only approximately -0.42 h (-0.85 to +0.06 h), and FCM
+minus Ridge approximately +0.10 h (-0.01 to +0.21 h). Intervals are
+approximate, do not account for all seasonal dependence or post-hoc
+model selection, and should not be presented as confirmatory tests.
+The +1 ppt salinity sensitivity was near +10 h at two stations:
+review the range, collinearity and scientific plausibility before
+interpreting these coefficients.
+
+**Critical interpretation**: the current direct-horizon FCM with a
+linear activation is a vector of fitted Ridge regressions, with no
+recursive concept feedback in the target forecast. It does not add
+FCM-specific predictive structure relative to an identical Ridge
+regression with the *same features and penalty*. The existing
+`ridge_physical` baseline has a different feature set, so an
+FCM-vs-Ridge comparison is not itself a controlled architectural ablation.
+A true recurrent FCM should be evaluated only after it is specified,
+fitted and tested under the same leakage-free procedure.

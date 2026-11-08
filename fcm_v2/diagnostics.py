@@ -219,7 +219,8 @@ def edge_stability(edges: pd.DataFrame, near_zero=0.05,
             "stable_exploratory": bool(
                 len(w) >= min_origins
                 and ts.dt.to_period("M").nunique() >= 3
-                and len(meaningful) >= min_origins // 2
+                and len(meaningful) >= max(10, int(np.ceil(0.60 * len(w))))
+                and abs(median) > near_zero
                 and dominant >= 0.8 and flips <= 3
                 and np.sign(early) == np.sign(late)
             ),
@@ -251,6 +252,86 @@ def summarize_stable_edges(stability: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def leave_one_station_out(pred: pd.DataFrame,
+                          pairs=(("fcm_linear_physical", "persistence"),
+                                 ("fcm_linear_physical", "fcm_linear_do"),
+                                 ("fcm_linear_physical", "ridge_physical"))) -> pd.DataFrame:
+    """Check how much pooled skill depends on any single station.
+
+    Differences are RMSE(candidate) minus RMSE(reference) on paired cases.
+    Negative means candidate wins. This is descriptive influence, not a test.
+    """
+    rows = []
+    for horizon in sorted(pred["horizon_days"].unique()):
+        view = pred.loc[pred["horizon_days"].eq(horizon)]
+        for a, b in pairs:
+            matched = _paired(view, a, b)
+            if matched.empty:
+                continue
+            for excluded in sorted(matched["node"].unique()):
+                remaining = matched.loc[matched["node"].ne(excluded)]
+                if remaining.empty:
+                    continue
+                ra, rb = _rmse_pair(remaining)
+                rows.append({
+                    "horizon_days": int(horizon),
+                    "candidate": a, "reference": b,
+                    "excluded_node": excluded,
+                    "remaining_stations": remaining["node"].nunique(),
+                    "remaining_cases": len(remaining),
+                    "candidate_rmse_hours": ra,
+                    "reference_rmse_hours": rb,
+                    "delta_rmse_hours": ra - rb,
+                })
+    return pd.DataFrame(rows)
+
+
+def sensitivity_audit(sensitivity: pd.DataFrame,
+                      threshold_hours=4.0) -> pd.DataFrame:
+    """Identify unusually large model response to +1 C or +1 ppt inputs.
+
+    Large responses are review flags, not proof of miscalibration; some
+    predictors have a narrow observed range and extrapolation is risky.
+    """
+    required = {
+        "node", "horizon_days", "activation", "perturbed_concept",
+        "actual_delta", "predicted_difference_hours"
+    }
+    if not required.issubset(sensitivity):
+        raise ValueError(f"Sensitivity CSV missing {sorted(required-set(sensitivity))}")
+    if threshold_hours <= 0:
+        raise ValueError("threshold_hours must be positive")
+    s = sensitivity.copy()
+    s["actual_delta"] = pd.to_numeric(s["actual_delta"], errors="coerce")
+    s["predicted_difference_hours"] = pd.to_numeric(
+        s["predicted_difference_hours"], errors="coerce")
+    # A +1 nominal input can be clipped at the physical bound, so only
+    # near-full perturbations qualify for a per-1-unit comparison.
+    s = s.loc[(s["actual_delta"] >= 0.90) &
+              s["predicted_difference_hours"].notna()].copy()
+    if s.empty:
+        return pd.DataFrame()
+    rows = []
+    group = ["node", "horizon_days", "activation", "perturbed_concept"]
+    for key, part in s.groupby(group):
+        w = part["predicted_difference_hours"].to_numpy(float)
+        rows.append(dict(zip(group, key)) | {
+            "n_origins": len(w),
+            "median_response_hours_per_nominal_1_unit": float(np.median(w)),
+            "mean_response_hours_per_nominal_1_unit": float(np.mean(w)),
+            "p90_abs_response_hours": float(np.quantile(np.abs(w), .90)),
+            "max_abs_response_hours": float(np.max(np.abs(w))),
+            "share_abs_response_gt_threshold": float(
+                np.mean(np.abs(w) > threshold_hours)),
+            "review_large_response": bool(
+                np.median(np.abs(w)) > threshold_hours
+                or np.mean(np.abs(w) > threshold_hours) >= 0.10),
+            "threshold_hours": threshold_hours,
+            "interpretation": "model_extrapolation_review_not_causal",
+        })
+    return pd.DataFrame(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(description="FCM edge/forecast diagnostics")
     parser.add_argument("--edges", type=Path,
@@ -264,6 +345,9 @@ def main():
     parser.add_argument("--bootstrap", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--near-zero", type=float, default=0.05)
+    parser.add_argument("--sensitivity", type=Path,
+                        default=Path("fcm_v2_outputs/scenario_sensitivity.csv"))
+    parser.add_argument("--sensitivity-threshold-hours", type=float, default=4.0)
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     if not args.edges.exists():
@@ -275,6 +359,15 @@ def main():
     by_source.to_csv(args.out_dir / "edge_do_summary.csv", index=False)
     print(f"Edge series: {len(stability)}; candidate stable: "
           f"{int(stability['stable_exploratory'].sum())}")
+    if args.sensitivity.exists():
+        responses = sensitivity_audit(pd.read_csv(args.sensitivity),
+                                      args.sensitivity_threshold_hours)
+        responses.to_csv(args.out_dir / "sensitivity_audit.csv", index=False)
+        if not responses.empty:
+            print(f"Large response review groups: "
+                  f"{int(responses.review_large_response.sum())}")
+    else:
+        print(f"Sensitivity file missing: {args.sensitivity}")
     if args.fcm.exists() and args.baselines.exists():
         fcm = pd.read_csv(args.fcm)
         baselines = pd.read_csv(args.baselines)
@@ -282,6 +375,9 @@ def main():
         comparisons = compare_models(data, args.bootstrap, args.seed)
         comparisons.to_csv(args.out_dir / "paired_uncertainty.csv",
                            index=False)
+        influences = leave_one_station_out(data)
+        influences.to_csv(args.out_dir / "leave_one_station_out.csv",
+                          index=False)
         print(comparisons.to_string(index=False))
     else:
         print("Forecast CSV absent. Edge stability generated; paired "

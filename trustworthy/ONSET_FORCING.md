@@ -131,3 +131,76 @@ prospective replay are needed before making operational alert claims.
 The current 2 mg/L onset evaluation reuses a small number of distinct
 episodes across overlapping windows. The new uncertainty intervals
 measure uncertainty under chosen time blocks, not independent events.
+
+
+## Final forcing builder QC / provenance update
+
+The repository now provides `python -m trustworthy.build_forcing`, which
+reads NDBC Virginia Key six-minute wind observations, follows them with
+CO-OPS Virginia Key wind readings, downloads/caches CO-OPS station
+8723214 water level (meters relative to **MSL**), and merges daily Miami
+International Airport precipitation totals (inches converted to mm).
+It writes `water_data/forcing_daily.csv` for stations in observed-only
+daily targets. The forcing data remains **regional**, even though it is
+repeated per station to match existing model input keys.
+
+### Corrected wind source handoff
+
+The builder now combines wind samples **by UTC timestamp before aggregating
+by local Miami calendar date**. NDBC readings take precedence up to the last
+valid NDBC sample; CO-OPS samples are used afterward. The CO-OPS request
+starts on the UTC date containing the last NDBC sample, including any
+remaining hours that belong to the preceding local date. Overlap timestamps
+are deduplicated, and the affected local day's provenance records both
+source names, e.g. `ndbc_vakf1+coops_8723214_wind`. This avoids dropping
+a partial local day around the 2025/2026 New Year boundary.
+
+### Explicit per-variable provenance columns
+
+The builder retains the original field names expected by
+`time_valid_forcing.read_forcing` and appends:
+
+| Field suffix | Meaning |
+|---|---|
+| `_source` | Direct observation archive/source for that day's variable |
+| `_spatial_scope` | `regional_proxy`, **not** a node-local sensor |
+| `_coverage_basis` | `observed_six_minute_slots` for wind/level or `daily_record_present_not_subdaily_verified` for rain |
+| `_availability_basis` | `assumed_fixed_lag_not_verified` |
+| `_role` | `regional_meteorology` or `coastal_tidal_boundary` |
+
+`rain_mm_coverage=1.0` is retained for compatibility with the current
+forcing validator. It only means that a daily archival record exists;
+**it does not assert that within-day rainfall sensor completeness was
+independently measured or that rainfall was available in real time**.
+Wind and water level completeness instead use the fraction of expected
+six-minute slots, accounting for daylight-saving 23-/25-hour days.
+
+The water level is a coastal tidal-boundary proxy, **not** the canal or
+bay's site-specific water level. Its numeric datum is MSL; do not mix it
+with NAVD88/NGVD29 station values without verified datum transformations.
+Shared regional wind/level are not independent replications across 17
+stations.
+
+All `available_at_utc` values remain explicit fixed-lag assumptions:
+3 hours after observation end for wind/water level and 24 hours after the
+local daily rainfall period by default. No source-reported publication
+timestamp is provided or implied. Do not upgrade the retrospective
+forcing experiment to an operational forecast claim on these timestamps.
+
+### Rebuild and verify
+
+```bash
+python -m unittest discover -s trustworthy/tests -v
+python -m trustworthy.build_forcing
+python -m trustworthy.time_valid_forcing --forcing water_data/forcing_daily.csv
+python -m trustworthy.onset_forcing --forcing water_data/forcing_daily.csv
+```
+
+The source-file downloads and cache are local under
+`water_data/coops_8723214/` and all generated forcing files remain
+gitignored. Rebuild the daily forcing CSV after merging this fix to
+apply the corrected local-day wind splice and provenance fields.
+**Retraining the GNN and the FCM is not necessary.** The goal is
+auditable environmental inputs, not new model fitting or hyperparameter
+optimization. Preserve the current negative onset-forecast ablation
+finding as part of the project conclusions.

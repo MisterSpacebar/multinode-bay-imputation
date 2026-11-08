@@ -2,6 +2,8 @@
 water_data/
 imputed_output/
 checkpoints/
+*_old_backup/
+trainlog.txt
 
 # Python
 __pycache__/

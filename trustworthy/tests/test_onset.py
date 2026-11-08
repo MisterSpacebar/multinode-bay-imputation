@@ -24,6 +24,7 @@ def daily_signal(n=220, start="2026-01-01"):
     deep = np.zeros(n)
     for k in range(20, n, 42):
         deep[k] = 0.5
+    state = np.maximum(state, deep)  # severe oxygen depletion implies <4mg/L
     do_min = np.where(deep > 0, 1.5, np.where(state > 0, 3.0, 6.0))
     return pd.DataFrame({
         "node": "bay_A", "date": idx.strftime("%Y-%m-%d"),

@@ -11,6 +11,8 @@ import pandas as pd
 from trustworthy.time_valid_forcing import (
     FIELDS, read_forcing, materialize_lags, materialize,
 )
+from trustworthy.onset_forcing import backtest_forcing, paired_comparisons
+from trustworthy.onset import backtest as onset_backtest
 from trustworthy.onset_uncertainty import (
     summarize_uncertainty, paired_cases, validate_predictions,
 )
@@ -139,6 +141,71 @@ class AvailabilityTests(unittest.TestCase):
             f.to_csv(filename, index=False)
             with self.assertRaises(ValueError):
                 read_forcing(filename)
+
+
+class ForcingOnsetTests(unittest.TestCase):
+    def _data(self, n=190):
+        times = pd.date_range("2026-01-01", periods=n, freq="D")
+        hrs2 = np.array([1.0 if i % 12 == 5 else 0.0 for i in range(n)])
+        d = pd.DataFrame({
+            "node": "bay", "date": times.strftime("%Y-%m-%d"),
+            "eligible": True, "coverage": 1.0,
+            "hours_lt4": hrs2 * 1.5, "hours_lt2": hrs2,
+            "odo_mean": 5.0 - hrs2, "odo_min": 4.0 - 3 * hrs2,
+            "odo_range": 1.5, "temp_mean": 28.0,
+            "sal_mean": 25.0,
+        })
+        raw = pd.DataFrame([
+            forcing_row(
+                "bay", stamp.strftime("%Y-%m-%d"), float(i % 8),
+                (stamp + pd.Timedelta(days=2)).tz_localize(
+                    "America/New_York").tz_convert("UTC").isoformat(),
+            )
+            for i, stamp in enumerate(times)
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            filepath = Path(directory) / "obs.csv"
+            raw.to_csv(filepath, index=False)
+            observations = read_forcing(filepath)
+        return d, observations
+
+    def test_rain_only_enables_rain_model_without_fabricating_wind(self):
+        daily, forcing = self._data()
+        p, excluded = backtest_forcing(
+            daily, forcing, thresholds=(2,), horizons=(1,),
+            min_train=30, min_events=2, months=("2026-06",))
+        self.assertIn("logit_rain_lag2", set(p["model"]))
+        self.assertFalse(p["model"].isin([
+            "logit_weather_lag2", "logit_hydro_lag2"]).any())
+        self.assertTrue((excluded.loc[
+            excluded["model"].eq("logit_weather_lag2"),
+            "reason"].eq("missing_issue_features")).any())
+        self.assertTrue(p["predicted_probability"].between(0, 1).all())
+
+    def test_paired_forcing_matches_same_observed_labels(self):
+        daily, forcing = self._data()
+        p, _ = backtest_forcing(
+            daily, forcing, thresholds=(2,), horizons=(1,),
+            min_train=30, min_events=2, months=("2026-06",))
+        b, _, _ = onset_backtest(
+            daily, thresholds=(2,), horizons=(1,),
+            min_train=30, min_events=2, months=("2026-06",))
+        compare = paired_comparisons(p, b)
+        self.assertFalse(compare.empty)
+        self.assertTrue(compare["n_paired"].gt(0).all())
+        self.assertTrue(compare["candidate_brier"].between(0, 1).all())
+
+    def test_future_publication_prevents_model_input(self):
+        daily, forcing = self._data()
+        forcing = forcing.copy()
+        mask = forcing["date"].eq(pd.Timestamp("2026-06-10"))
+        forcing.loc[mask, "rain_mm_available_at_utc"] = pd.Timestamp(
+            "2026-06-20T12:00:00Z")
+        p, _ = backtest_forcing(
+            daily, forcing, thresholds=(2,), horizons=(1,),
+            min_train=30, min_events=2, months=("2026-06",))
+        # Rain published long after issue 2026-06-12 must remain ineligible.
+        self.assertFalse((p["issue_date"] == "2026-06-12").any())
 
 
 class UncertaintyTests(unittest.TestCase):

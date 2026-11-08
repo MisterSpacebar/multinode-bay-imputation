@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "trustworthy/**"
+      - "fcm_v2/**"
       - "preprocess.py"
       - "train.py"
       - ".github/workflows/trustworthy-tests.yml"
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - "trustworthy/**"
+      - "fcm_v2/**"
       - "preprocess.py"
       - "train.py"
       - ".github/workflows/trustworthy-tests.yml"
@@ -26,6 +28,8 @@ jobs:
       - name: Install tested audit dependencies
         run: python -m pip install "numpy>=1.26,<3" "pandas>=2.2,<3"
       - name: Run synthetic unit tests
-        run: python -m unittest discover -s trustworthy/tests -v
+        run: |
+          python -m unittest discover -s trustworthy/tests -v
+          python -m unittest discover -s fcm_v2/tests -v
       - name: Compile changed Python files
-        run: python -m py_compile trustworthy/*.py trustworthy/tests/*.py preprocess.py train.py
+        run: python -m py_compile trustworthy/*.py trustworthy/tests/*.py fcm_v2/*.py fcm_v2/tests/*.py preprocess.py train.py

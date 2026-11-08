@@ -31,3 +31,6 @@ Thumbs.db
 
 # Reproducible audit outputs (may contain private station metadata)
 trustworthy_outputs/
+
+# Observed-only physical FCM outputs (local station metadata)
+fcm_v2_outputs/

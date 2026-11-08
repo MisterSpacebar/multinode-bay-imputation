@@ -170,3 +170,87 @@ forecast comparisons.
    forecast skill.
 6. No real-world performance improvement is claimed until tests pass and
    outputs are checked against private local data.
+
+
+## Phase 3: observed hypoxia regimes and onset-risk evaluation
+
+This phase is deliberately **separate** from the existing daily hours-below-4
+forecast and FCM evaluation. Neither baseline nor FCM code is modified.
+
+```bash
+python -m trustworthy.regimes
+python -m trustworthy.onset
+python -m unittest discover -s trustworthy/tests -v
+```
+
+The first command uses `trustworthy_outputs/daily_targets.csv` to mark
+observed local calendar days by threshold (4 mg/L and 2 mg/L) as:
+
+- **normal**: today and the immediately previous day had adequate coverage,
+  and neither had observed low oxygen;
+- **onset**: previously normal, today observed below threshold;
+- **persistent_hypoxia**: both days observed below threshold;
+- **recovery**: previously hypoxic, today not observed below threshold;
+- **unknown**: at least one day has insufficient or missing observation
+  coverage, including the first station date.
+
+A day's regime is an **outcome**, not a forecast predictor.
+An observed threshold crossing means one or more observed five-minute
+samples below the chosen cutoff, not a modeled threshold crossing.
+A plausible zero or flatline remains observed but is separately flagged
+for quality review. With 95% coverage, a small unobserved window may
+still contain an unmeasured event; absence of observed onset is therefore
+not proof of absence of all short episodes.
+
+The second command builds new-onset labels from stations that have **two
+consecutive eligible normal days immediately before issuance**, then
+requires *all* future daily targets within the next 1, 3 or 7 days to
+satisfy coverage thresholds. Missing future days make the outcome unknown,
+not a negative example. For <2 mg/L onset, a station may already be below
+4 mg/L while still being at risk for a new severe episode.
+
+**Forecast issue is end-of-day**, after all measurements of that day
+are available. A positive window means new threshold crossing occurs
+**at least once** within the future horizon; overlapping windows count
+the same physical onset more than once. Outcomes are retrospective,
+rather than live sensor alerts.
+
+A historical smoothed event-rate forecast and penalized logistic risk
+models are fitted per station, threshold and horizon. Logistic variants:
+
+- `logit_do` — today's DO mean, minimum, range and observed hours below
+  4 and 2 mg/L;
+- `logit_physical` — the same, plus today's water temperature and salinity.
+
+Predictions use strictly past issue-day features and *completed* training
+outcome windows (`window_end < issue_date`); class-imbalanced histories
+with fewer than three positives **or** three negatives are excluded from
+fitted logistic models by default. `history_rate` remains an honest
+reference when no positive episodes exist.
+
+Reports in `trustworthy_outputs/onset/`:
+
+| Filename | Content |
+|---|---|
+| `regime_days.csv` | Complete observed day-by-day classification and QC caution |
+| `regime_summary.csv` | Counts per station, month, threshold, and regime |
+| `regime_forecast_pooled.csv` | Paired persistence skill of old continuous forecasts by target-day regime |
+| `regime_forecast_station.csv` | Same continuous-forecast errors for each station |
+| `onset_windows.csv` | Auditable issue dates, future windows and missingness reasons |
+| `onset_exclusions.csv` | Candidate prediction exclusions (sparse events, gaps, history, features) |
+| `onset_predictions.csv` | Historical-rate and logistic event-risk predictions |
+| `onset_summary_pooled.csv` | Pooled event prevalence, Brier score, average precision |
+| `onset_summary_station.csv` | Station-level event prevalence and risk performance |
+| `onset_paired_brier.csv` | On identical forecast cases: risk model Brier vs historical-rate Brier |
+
+The high-coverage requirements can exclude most samples from sparse
+stations. This is a defensible limitation, **not an error**. Reports
+show per-station sample sizes and onset counts. Repeated forecasts for
+the same event, serial correlation, rare <2 mg/L episodes, and uncertain
+sensor provenance prevent interpreting these initial Brier/AP values as
+validated operational alert quality. No probability threshold, false-alert
+rate or sensitivity is claimed without independent validation.
+
+Some stations are chronically hypoxic and therefore may have few or
+zero *at-risk normal days*. Their hours-below-threshold prediction remains
+scientifically relevant even when no onset-risk forecast is eligible.

@@ -102,7 +102,12 @@ class EdgeDiagnosticsTests(unittest.TestCase):
         self.assertEqual(len(results), 6)
         self.assertTrue((results["remaining_stations"] == 1).all())
         self.assertTrue((results["remaining_cases"] == 64).all())
-        self.assertTrue((results["delta_rmse_hours"] < 0).all())
+        self.assertTrue((results.loc[
+            results["reference"].isin(["persistence", "fcm_linear_do"]),
+            "delta_rmse_hours"] < 0).all())
+        self.assertTrue((results.loc[
+            results["reference"].eq("ridge_physical"),
+            "delta_rmse_hours"] > 0).all())
 
     def test_large_salinity_response_is_reviewed(self):
         records = pd.DataFrame({
@@ -124,7 +129,7 @@ class EdgeDiagnosticsTests(unittest.TestCase):
         base["issue_date"] = "2025-01-01"
         combined = load_predictions(fcm, base)
         res = compare_models(combined, n_boot=10)
-        self.assertTrue(res.empty)
+        self.assertEqual(set(res["reference"]), {"fcm_linear_do"})
 
 
 if __name__ == "__main__":

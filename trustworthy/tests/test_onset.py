@@ -94,6 +94,8 @@ class OnsetTests(unittest.TestCase):
                          "future_low_coverage")
         self.assertTrue(np.isnan(by_date.loc["2026-01-04", "label"]))
         self.assertEqual(by_date.loc["2026-01-05", "reason"],
+                         "future_low_coverage")
+        self.assertEqual(by_date.loc["2026-01-06", "reason"],
                          "already_below_threshold")
         self.assertEqual(by_date.loc["2026-01-11", "reason"],
                          "incomplete_future_window")
@@ -106,7 +108,9 @@ class OnsetTests(unittest.TestCase):
         self.assertEqual(by_date.loc["2026-01-04", "event_date"], "2026-01-06")
         self.assertEqual(by_date.loc["2026-01-06", "reason"],
                          "already_below_threshold")
-        self.assertEqual(by_date.loc["2026-01-08", "label"], 0)
+        self.assertEqual(by_date.loc["2026-01-08", "reason"],
+                         "already_below_threshold")
+        self.assertEqual(by_date.loc["2026-01-09", "label"], 0)
 
     def test_threshold_2_respects_its_own_at_risk_condition(self):
         d = daily_signal(n=45)

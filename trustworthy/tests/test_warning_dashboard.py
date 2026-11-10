@@ -9,6 +9,7 @@ import pandas as pd
 from trustworthy.warning_dashboard import (
     calibration_table, checked_predictions, latest_snapshot,
     observed_future, query_forecast, risk_level, threshold_sweep, make_figures,
+    all_stations_date_query,
 )
 
 
@@ -178,6 +179,52 @@ class WarningDashboardTests(unittest.TestCase):
             for filename in expected:
                 self.assertGreater((dest/filename).stat().st_size,100,
                                    filename)
+
+
+    def test_all_stations_date_query_mixed_states_and_missing_station(self):
+        states=synthetic_states()
+        # B is already Severe on July 3. C has no observation July 3.
+        b=states.loc[states.date.eq(pd.Timestamp("2026-07-03"))].copy()
+        b["node"]="B"
+        b["state"]="Severe"
+        b["hours_lt2"]=1.
+        b["hours_lt4"]=1.
+        c=states.loc[states.date.eq(pd.Timestamp("2026-07-02"))].copy()
+        c["node"]="C"
+        mixed=pd.concat([states,b,c],ignore_index=True)
+        w=simple_windows()
+        p=example_predictions()
+        summary,details,observed=all_stations_date_query(
+            w,pd.DataFrame(),p,mixed,synthetic_daily(),"2026-07-03")
+        self.assertEqual(set(summary.node),{"A","B","C"})
+        a=summary.set_index("node").loc["A"]
+        self.assertEqual(a.status,"eligible")
+        self.assertAlmostEqual(a.risk_1d,.1)
+        self.assertAlmostEqual(a.risk_3d,.1)
+        self.assertAlmostEqual(a.risk_7d,.7)
+        self.assertEqual(a.model_1d,"do_history")
+        self.assertEqual(a.model_7d,"markov")
+        self.assertEqual(a.forecast_source_1d,"monthly_out_of_sample_hindcast")
+        self.assertEqual(summary.set_index("node").loc["B","status"],"already_severe")
+        self.assertEqual(summary.set_index("node").loc["C","status"],"no_observation_on_date")
+        self.assertTrue(np.isnan(summary.set_index("node").loc["B","risk_3d"]))
+        self.assertEqual(len(details),9)
+        self.assertEqual(len(observed),21)
+        self.assertEqual(observed.loc[observed.node.eq("C"),"record_available"].sum(),0)
+
+    def test_all_stations_query_respects_unknown_issue_and_unavailable_outcome(self):
+        s=synthetic_states()
+        w=simple_windows()
+        p=example_predictions()
+        summary,_,_=all_stations_date_query(
+            w,pd.DataFrame(),p,s,synthetic_daily(),"2026-07-07")
+        self.assertEqual(summary.iloc[0].status,"unknown_issue_state")
+        self.assertTrue(np.isnan(summary.iloc[0].risk_1d))
+        # With sparse/restricted future labels there is no invented negative.
+        summary,_,_=all_stations_date_query(
+            w,pd.DataFrame(),p,s,synthetic_daily(),"2026-07-03")
+        self.assertTrue(np.isnan(summary.iloc[0].observed_severe_within_1d)
+                        or summary.iloc[0].observed_severe_within_1d in (0,1))
 
 if __name__=="__main__":
     unittest.main()

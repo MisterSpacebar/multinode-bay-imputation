@@ -461,6 +461,124 @@ def show_query(station, date, windows, states, daily, transitions, preds,
     print("These are research hindcasts, not live warnings or verified alert thresholds.")
 
 
+
+ALL_STATIONS_SUMMARY_COLUMNS = (
+    "node", "issue_date", "current_state", "status",
+    *[field for h in HORIZONS for field in (
+        f"risk_{h}d", f"model_{h}d", f"observed_severe_within_{h}d",
+        f"first_severe_date_{h}d", f"forecast_source_{h}d",
+    )],
+)
+
+
+def all_stations_date_query(windows, transitions, predictions, states, daily, date,
+                            alpha=10., prior=20., min_train=60, min_events=3):
+    """Forecast every station for the SAME issue date, retaining exclusions.
+
+    Models are trained on pooled historical station observations; the Markov
+    baseline shrinks each station's past transition rows toward the pooled
+    history. Future observations are looked up only after forecasting.
+    Returns (one-row-per-station summary, full model predictions, actual DO).
+    """
+    date = _date(date)
+    s = prepare_states(states)
+    w = windows.copy()
+    w["node"] = w.node.astype(str)
+    w["issue_date"] = pd.to_datetime(w.issue_date, errors="raise")
+    issue = s.loc[s.date.eq(date)].set_index("node")
+    rows, detailed, actual = [], [], []
+    for node in sorted(s.node.unique()):
+        current = (str(issue.loc[node, "state"])
+                   if node in issue.index else "No observation")
+        summary = dict(node=node, issue_date=date.date().isoformat(),
+                       current_state=current, status="eligible")
+        for h in HORIZONS:
+            summary.update({
+                f"risk_{h}d": np.nan, f"model_{h}d": "",
+                f"observed_severe_within_{h}d": np.nan,
+                f"first_severe_date_{h}d": "",
+                f"forecast_source_{h}d": "",
+            })
+        if current == "No observation":
+            summary["status"] = "no_observation_on_date"
+        elif current == "Unknown":
+            summary["status"] = "unknown_issue_state"
+        elif current == "Severe":
+            summary["status"] = "already_severe"
+        elif current not in ("Normal", "Moderate"):
+            raise ValueError(f"Unexpected daily state {current!r}")
+        else:
+            origin = w.loc[w.node.eq(node) & w.issue_date.eq(date)]
+            if origin.empty:
+                summary["status"] = "no_hindcast_window"
+            elif origin.status.eq("issue_qc_ineligible").any():
+                summary["status"] = "issue_qc_ineligible"
+            else:
+                q = query_forecast(windows, transitions, predictions, node, date,
+                                   alpha, prior, min_train, min_events)
+                if not q.empty:
+                    detailed.append(q)
+                for h in HORIZONS:
+                    horizon = origin.loc[origin.horizon_days.eq(h)]
+                    if len(horizon) == 1 and horizon.iloc[0].status == "evaluable":
+                        summary[f"observed_severe_within_{h}d"] = (
+                            int(horizon.iloc[0].label))
+                        summary[f"first_severe_date_{h}d"] = (
+                            horizon.iloc[0].first_severe_date or "")
+                    matches = q.loc[q.horizon_days.eq(h)]
+                    preferred = BEST_MODEL[h]
+                    chosen = matches.loc[matches.model.eq(preferred)]
+                    if chosen.empty:
+                        # A small historical training set can support only the
+                        # Markov baseline. Never invent a logistic probability.
+                        chosen = matches.loc[matches.model.eq("markov")]
+                    if not chosen.empty:
+                        record = chosen.iloc[0]
+                        summary[f"risk_{h}d"] = float(record.probability)
+                        summary[f"model_{h}d"] = str(record.model)
+                        summary[f"forecast_source_{h}d"] = str(record.source)
+                if all(not np.isfinite(summary[f"risk_{h}d"]) for h in HORIZONS):
+                    summary["status"] = "insufficient_history_or_features"
+                elif any(not np.isfinite(summary[f"risk_{h}d"]) for h in HORIZONS):
+                    summary["status"] = "partial_forecast"
+        rows.append(summary)
+        # Future observations are only the historical truth display, and
+        # remain Unknown if a date has insufficient measured coverage.
+        actual.append(observed_future(states, daily, node, date, horizon=7))
+    all_summary = pd.DataFrame(rows, columns=ALL_STATIONS_SUMMARY_COLUMNS)
+    detail = (pd.concat(detailed, ignore_index=True)
+              if detailed else _empty_query_result())
+    truth = pd.concat(actual, ignore_index=True) if actual else pd.DataFrame()
+    return all_summary, detail, truth
+
+
+def show_all_stations_query(date, windows, states, daily, transitions, preds,
+                            out_dir, alpha, prior, min_train, min_events):
+    """Console summary plus CSV exports for all stations at one issue date."""
+    summary, detail, actual = all_stations_date_query(
+        windows, transitions, preds, states, daily, date,
+        alpha, prior, min_train, min_events)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    summary.to_csv(out_dir / "hindcast_all_stations_summary.csv", index=False)
+    detail.to_csv(out_dir / "hindcast_all_stations_models.csv", index=False)
+    actual.to_csv(out_dir / "hindcast_all_stations_actual_future.csv", index=False)
+    print(f"\nHistorical station-wide severe-hypoxia forecasts: {date}")
+    view = ["node", "current_state", "status",
+            "risk_1d", "risk_3d", "risk_7d",
+            "observed_severe_within_1d", "observed_severe_within_3d",
+            "observed_severe_within_7d"]
+    print(summary[view].to_string(index=False, na_rep="unknown",
+                                  float_format=lambda x: f"{x:.3f}"))
+    counts = summary.status.value_counts().to_dict()
+    print(f"\nStations: {len(summary)} | status: {counts}")
+    print("Model selection: DO history for 1/3d, Markov for 7d; historical "
+          "Markov fallback is flagged per horizon when DO history unavailable.")
+    print("The output is a collection of station-specific estimates, NOT "
+          "the probability of a bay-wide event.")
+    print("Unknown future data are never interpreted as no Severe event.")
+    print(f"Saved station summary, all fitted models and seven-day recorded DO to {out_dir}")
+    return summary, detail, actual
+
 def main():
     ap=argparse.ArgumentParser(
         description="Hypoxia warning charts, latest observations and historical date queries")
@@ -480,6 +598,8 @@ def main():
     ap.add_argument("--timeline-stations",nargs="*",default=[])
     ap.add_argument("--max-timeline-stations",type=int,default=3)
     ap.add_argument("--query-node",type=str)
+    ap.add_argument("--query-all", "--all-stations", dest="query_all", action="store_true",
+                    help="Forecast all stations on the same --query-date")
     ap.add_argument("--query-date",type=str,help="Historical issue date YYYY-MM-DD")
     ap.add_argument("--interactive",action="store_true",
                     help="Prompt for station and historical date repeatedly")
@@ -490,8 +610,10 @@ def main():
     ap.add_argument("--min-train",type=int,default=60)
     ap.add_argument("--min-events",type=int,default=3)
     args=ap.parse_args()
-    if bool(args.query_node)!=bool(args.query_date):
-        ap.error("--query-node and --query-date must be used together")
+    if args.query_node and args.query_all:
+        ap.error("Choose --query-node OR --query-all, not both")
+    if bool(args.query_node or args.query_all) != bool(args.query_date):
+        ap.error("--query-date is required with --query-node or --query-all")
     if args.max_timeline_stations<0:
         ap.error("--max-timeline-stations must be nonnegative")
     inputs = {key:pd.read_csv(getattr(args,key))
@@ -534,22 +656,32 @@ def main():
     if args.query_node:
         show_query(args.query_node,args.query_date,w,s,inputs["daily"],t,p,
                    args.out_dir,args.alpha,args.station_prior,args.min_train,args.min_events)
+    if args.query_all:
+        show_all_stations_query(args.query_date,w,s,inputs["daily"],t,p,
+                                args.out_dir,args.alpha,args.station_prior,
+                                args.min_train,args.min_events)
     if args.interactive:
         nodes = sorted(s.node.unique())
         print("\nInteractive historical hindcast lookup. Available station names:")
+        print("  ALL  (forecast every station for one historical date)")
         for node in nodes:
             print(" ",node)
         while True:
             station=input("\nStation (blank to quit): ").strip()
             if not station:
                 break
-            if station not in nodes:
-                print("Unknown station; copy a station name from the list.")
+            if station not in nodes and station.casefold() != "all":
+                print("Unknown station; copy a station name from the list or type ALL.")
                 continue
             date=input("Historical issue date (YYYY-MM-DD): ").strip()
             try:
-                show_query(station,str(_date(date).date()),w,s,inputs["daily"],t,p,
-                           args.out_dir,args.alpha,args.station_prior,args.min_train,args.min_events)
+                if station.casefold() == "all":
+                    show_all_stations_query(str(_date(date).date()),w,s,inputs["daily"],t,p,
+                                            args.out_dir,args.alpha,args.station_prior,
+                                            args.min_train,args.min_events)
+                else:
+                    show_query(station,str(_date(date).date()),w,s,inputs["daily"],t,p,
+                               args.out_dir,args.alpha,args.station_prior,args.min_train,args.min_events)
             except (ValueError,KeyError) as e:
                 print("Unable to query:",e)
     print(f"Warning dashboard saved to {args.out_dir}")

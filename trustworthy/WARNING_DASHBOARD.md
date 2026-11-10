@@ -124,6 +124,43 @@ the queried day, the new-onset risk is **not applicable**; consult the Phase 3
 recovery/persistence outputs. Missing future days are not counted as
 negative events.
 
+
+### Compare all stations on one historical date
+
+You can now submit a date **without selecting an individual station**:
+
+\`\`\`bash
+python -m trustworthy.warning_dashboard --query-all --query-date 2025-07-15 --no-figures --no-snapshot
+\`\`\`
+
+The equivalent option \`--all-stations\` also works. In the interactive console
+(\`--interactive\`), enter \`ALL\` as the station name and then type the date.
+
+The console prints **one row per station**, with each station's recorded
+issue-day state, 1/3/7-day risk, and what was actually observed within each
+complete future horizon. Source files include:
+
+- \`hindcast_all_stations_summary.csv\`: per-station 1/3/7-day selected-model
+  risks and observed Severe outcomes when known; the model choice and
+  prediction source are explicit for each horizon
+- \`hindcast_all_stations_models.csv\`: available Markov, DO-history and
+  environmental risk estimates, with alert levels and outcome availability
+- \`hindcast_all_stations_actual_future.csv\`: observed oxygen state and daily
+  minimum DO over the next seven calendar days for every station
+
+The station-wide query **does not average probabilities across the bay**.
+It performs separate station-specific predictions based on the available
+shared training data, and accounts for station-specific Markov transitions.
+The output explicitly distinguishes stations already Severe, Unknown,
+missing on the selected date, and ineligible or unsupported forecasts.
+Where there is insufficient history for the selected 1/3-day DO-history model,
+a Markov fallback may be shown and labeled as such.
+
+A historic date can be eligible for some stations but not others; those
+without adequate observations are included with missing probabilities, not
+silently dropped. Future observations remain a separate post-forecast
+comparison, never model training inputs.
+
 ## Latest-observation snapshot (not a live forecast)
 
 The latest snapshot uses the **latest eligible recorded day per station**.

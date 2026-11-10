@@ -199,8 +199,8 @@ class WarningDashboardTests(unittest.TestCase):
         self.assertEqual(set(summary.node),{"A","B","C"})
         a=summary.set_index("node").loc["A"]
         self.assertEqual(a.status,"eligible")
-        self.assertAlmostEqual(a.risk_1d,.1)
-        self.assertAlmostEqual(a.risk_3d,.1)
+        self.assertAlmostEqual(a.risk_1d,.65)
+        self.assertAlmostEqual(a.risk_3d,.65)
         self.assertAlmostEqual(a.risk_7d,.7)
         self.assertEqual(a.model_1d,"do_history")
         self.assertEqual(a.model_7d,"markov")

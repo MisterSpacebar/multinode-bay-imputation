@@ -62,7 +62,7 @@ def checked_predictions(predictions):
         raise ValueError("Duplicate station/day/horizon/model hindcast")
     groups = p.groupby(["node", "issue_date", "horizon_days"])
     if not groups.model.nunique().eq(len(MODELS)).all() or groups.label.nunique().gt(1).any():
-        raise ValueError("Hindcast must have three matched models and identical labels")
+        raise ValueError("Hindcast is missing matched models or paired labels differ")
     return p.sort_values(["node", "issue_date", "horizon_days", "model"]).reset_index(drop=True)
 
 

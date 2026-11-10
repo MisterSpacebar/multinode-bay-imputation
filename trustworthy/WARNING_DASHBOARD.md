@@ -71,8 +71,10 @@ three default stations with the most comparable 3-day hindcasts. Set
   with severe-day markers plus 1/3/7-day selected-model warning probabilities
 
 Station heatmaps contain **only dates with matched out-of-sample hindcasts**;
-empty areas are not “zero risk.” Timelines are retrospective; no background
-imputation or invented oxygen readings are used.
+black crosses indicate days for which Severe hypoxia was subsequently observed
+within the plotted forecast horizon. Empty areas are not “zero risk.”
+Timelines are retrospective; no background imputation or invented oxygen
+readings are used.
 
 ## Console query: historical date and recorded outcome
 

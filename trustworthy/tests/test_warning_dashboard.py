@@ -1,12 +1,14 @@
 """Tests for warning dashboard metrics, historical dates and forecast provenance."""
 import unittest
+import tempfile
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from trustworthy.warning_dashboard import (
     calibration_table, checked_predictions, latest_snapshot,
-    observed_future, query_forecast, risk_level, threshold_sweep,
+    observed_future, query_forecast, risk_level, threshold_sweep, make_figures,
 )
 
 
@@ -152,6 +154,30 @@ class WarningDashboardTests(unittest.TestCase):
         self.assertEqual(chosen.stale_days,1)
         self.assertTrue(np.isnan(chosen.risk_7d))
 
+
+
+    def test_visualization_smoke_on_synthetic_data(self):
+        try:
+            import matplotlib
+        except ImportError:
+            self.skipTest("Matplotlib optional")
+        predictions=example_predictions()
+        sweep=threshold_sweep(predictions)
+        calibration=calibration_table(predictions)
+        with tempfile.TemporaryDirectory() as folder:
+            dest=Path(folder)
+            make_figures(predictions,sweep,calibration,synthetic_daily(),
+                         synthetic_states(),dest,timeline_stations=("A",))
+            expected=[
+                "threshold_tradeoff_1d.png","threshold_tradeoff_3d.png",
+                "threshold_tradeoff_7d.png","reliability_1d.png",
+                "reliability_3d.png","reliability_7d.png",
+                "hindcast_model_comparison.png","station_risk_heatmap_3d.png",
+                "station_risk_heatmap_7d.png","timeline_A.png",
+            ]
+            for filename in expected:
+                self.assertGreater((dest/filename).stat().st_size,100,
+                                   filename)
 
 if __name__=="__main__":
     unittest.main()

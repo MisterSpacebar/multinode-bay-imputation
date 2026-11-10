@@ -381,6 +381,16 @@ def make_figures(preds, sweep, calibrations, daily, states, directory,
         ax.set_xticks(xt,[mat.columns[i].strftime("%Y-%m-%d") for i in xt],
                       rotation=35,ha="right",fontsize=8)
         ax.set_yticks(range(len(mat.index)),[str(s)[-34:] for s in mat.index],fontsize=7)
+        # Overlay only events actually observed within each fully scored horizon.
+        # These crosses are future labels for retrospective comparison, never predictors.
+        labeled = b.loc[b.label.eq(1), ["node", "issue_date"]]
+        x_lookup = {day: i for i, day in enumerate(mat.columns)}
+        y_lookup = {station: i for i, station in enumerate(mat.index)}
+        if not labeled.empty:
+            ax.scatter(labeled.issue_date.map(x_lookup), labeled.node.map(y_lookup),
+                       marker="x", s=13, c="black", linewidths=.7,
+                       label="Observed Severe within horizon")
+            ax.legend(fontsize=7, loc="upper right")
         ax.set(title=f"{h}-day hindcast risk by station (missing cells = unscored)")
         fig.colorbar(im,ax=ax,label="Predicted P(any Severe within horizon)")
         fig.tight_layout()

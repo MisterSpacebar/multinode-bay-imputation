@@ -254,3 +254,17 @@ rate or sensitivity is claimed without independent validation.
 Some stations are chronically hypoxic and therefore may have few or
 zero *at-risk normal days*. Their hours-below-threshold prediction remains
 scientifically relevant even when no onset-risk forecast is eligible.
+
+## Phase 4: retrospective warning-policy and episode-level evaluation
+
+Evaluates the transition-warning hindcasts against held-out climatology, chooses
+cost-sensitive alert thresholds chronologically, and measures detection of distinct
+severe onsets, lead time and alert burden. It does not retrain any warning model.
+See `WARNING_EVALUATION.md` for definitions, outputs and limits.
+
+```bash
+python -m trustworthy.warning_evaluation
+python -m trustworthy.episode_warning_evaluation
+python -m trustworthy.warning_burden
+python -m trustworthy.warning_evaluation_figures
+```
